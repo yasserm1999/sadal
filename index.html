@@ -269,8 +269,8 @@ const inCostCat=c=>!!(EXP_CATS.find(x=>x.n===c)||{}).inCost;
 const PAYM=['Cash','Bank transfer','Card'];
 
 /* ---------- data ---------- */
-const COLS=['orders','products','fabrics','suppliers','expenses'];
-const S={orders:[],products:[],fabrics:[],suppliers:[],expenses:[]};
+const COLS=['orders','products','fabrics','suppliers','expenses','stock'];
+const S={orders:[],products:[],fabrics:[],suppliers:[],expenses:[],stock:[]};
 const loaded=new Set();
 let sb=null, mode='loading', canWrite=true, dl=true, assets=true, started=false, chan=null;
 const photoUrl=id=>id||'';
@@ -278,7 +278,7 @@ async function shrink(file){
   try{const bmp=await createImageBitmap(file);const s=Math.min(1,1400/Math.max(bmp.width,bmp.height));const c=document.createElement('canvas');c.width=Math.round(bmp.width*s);c.height=Math.round(bmp.height*s);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);return await new Promise(r=>c.toBlob(b=>r(b||file),'image/jpeg',.85))}catch(e){return file}
 }
 const LS='sadal-v1';
-const ui={tab:'home',sub:{orders:'list',fabric:'fabric',money:'summary'},of:'open',ff:'stock',q:'',period:'month'};
+const ui={tab:'home',sub:{orders:'list',designs:'list',fabric:'fabric',money:'summary'},of:'open',ff:'stock',sf:'stock',q:'',period:'month'};
 
 async function boot(){
   render();
@@ -353,7 +353,19 @@ function pay(o){if(o.gift)return'Gift';const c=oc(o);if(c.total>0&&c.bal<=0.0005
 const payLbl={Paid:'Paid',Part:'Part paid',Unpaid:'Unpaid',Gift:'Free gift'};
 const live=()=>S.orders.filter(o=>o.status!=='Cancelled');
 function soldOf(code){return sum(live(),o=>sum(o.items||[],i=>i.code===code?n(i.qty):0))}
-const avail=p=>n(p.made)-soldOf(p.code);
+/* Stock: each finished abaya made ahead is its own record. A piece is sold when a
+   live (not cancelled) order has an item pointing at it, so cancelling or deleting
+   the order puts it straight back in stock. */
+let curOrderId=null;
+const stockUsedBy=(id,except)=>live().find(o=>o.id!==except&&(o.items||[]).some(i=>i.stockId===id));
+const inStock=pc=>!stockUsedBy(pc.id);
+const avail=p=>S.stock.filter(s=>s.code===p.code&&inStock(s)).length;
+const pieceLbl=s=>[s.size?'Size '+s.size:'',s.m&&s.m.length?'L '+s.m.length:'',s.m&&s.m.chest?'C '+s.m.chest:'',s.m&&s.m.sleeves?'S '+s.m.sleeves:''].filter(Boolean).join(' · ')||'No size noted';
+function stockOpts(code,selId){
+  const ps=S.stock.filter(s=>s.code===code&&(s.id===selId||!stockUsedBy(s.id,curOrderId))).sort((a,b)=>(a.made||'').localeCompare(b.made||''));
+  if(!code||!ps.length)return'';
+  return fld('From stock',`<select data-f="stock"><option value="">Make new (to order)</option>${ps.map(s=>`<option value="${esc(s.id)}" ${s.id===selId?'selected':''}>${esc(pieceLbl(s))}${s.made?' · made '+esc(fdate(s.made)):''}</option>`).join('')}</select>`);
+}
 function nextNo(){return S.orders.reduce((m,o)=>Math.max(m,n(o.no)),0)+1}
 function inP(d,p){
   if(p==='all')return true; if(!d)return false;
@@ -407,7 +419,7 @@ function render(){
   if(!ready&&mode!=='local')h='<div class="empty">Loading your records…</div>';
   else h=(!canWrite?'<div class="ro">You have view-only access. Ask the owner to make you an Editor to add or change records.</div>':'')+VIEWS[ui.tab]();
   $('#main').innerHTML=h;
-  const fab=$('#fab'),F={orders:ui.sub.orders==='list'?['new-order','New order']:null,designs:['new-design','New design'],fabric:ui.sub.fabric==='fabric'?['new-fabric','Add fabric']:['new-supplier','Add supplier'],money:ui.sub.money==='exp'?['new-expense','Add expense']:null,home:['new-order','New order']}[ui.tab];
+  const fab=$('#fab'),F={orders:ui.sub.orders==='list'?['new-order','New order']:null,designs:ui.sub.designs==='stock'?['new-stock','Add to stock']:['new-design','New design'],fabric:ui.sub.fabric==='fabric'?['new-fabric','Add fabric']:['new-supplier','Add supplier'],money:ui.sub.money==='exp'?['new-expense','Add expense']:null,home:['new-order','New order']}[ui.tab];
   if(F&&canWrite&&ready){fab.hidden=false;fab.dataset.act=F[0];fab.innerHTML=`<span>+</span>${F[1]}`}else fab.hidden=true;
   if(keep){const q=$('#q');if(q){q.focus();try{q.setSelectionRange(keep[0],keep[1])}catch(e){}}}
 }
@@ -427,6 +439,18 @@ function orderRow(o){
       <span class="s">${items||'No items'}${o.due?` · due ${fdate(o.due)}`:''}${late?' · <b class="neg">late</b>':''}</span></span>
     <span class="end">${omr(c.total)}<br>${stat}${o.status!=='Cancelled'?` <span class="pill p-${p}">${payLbl[p]}</span>`:''}</span>${nextBtn}
   </div>`;
+}
+function stockView(){
+  if(!S.products.length)return `<div class="group"><div class="empty"><b>No designs yet</b>Add a design first, then record the finished abayas you keep in stock.</div></div>`;
+  const all=S.stock.map(s=>({s,o:stockUsedBy(s.id)}));
+  const here=all.filter(x=>!x.o);
+  const list=(ui.sf==='stock'?here:all).sort((a,b)=>(a.s.code||'').localeCompare(b.s.code||'',undefined,{numeric:true})||(a.s.made||'').localeCompare(b.s.made||''));
+  return `<div class="chips"><button class="chip ${ui.sf==='stock'?'on':''}" data-act="sf" data-v="stock">In stock<span class="c">${here.length}</span></button><button class="chip ${ui.sf==='all'?'on':''}" data-act="sf" data-v="all">All, incl. sold<span class="c">${all.length}</span></button></div>
+  <p class="hint">${here.length} abaya${here.length===1?'':'s'} in stock, worth ${money(sum(here,x=>n(x.s.cost)))} OMR at cost. To sell one: New order → pick the design → choose the piece under “From stock”.</p>
+  <div class="group">${list.length?list.map(({s,o})=>{const p=prod(s.code)||{};
+    return `<button class="row" data-act="edit-stock" data-id="${esc(s.id)}">${p.photo?`<img class="thumb" src="${photoUrl(p.photo)}" alt="">`:`<span class="code">${esc(s.code)}</span>`}
+    <span class="main"><span class="t">${esc(s.code)} · ${esc(pieceLbl(s))}</span><span class="s">${s.made?'Made '+esc(fdate(s.made)):'No date'}${s.notes?' · '+esc(s.notes):''}</span></span>
+    <span class="end">${omr(n(p.price))}<br>${o?`<span class="pill p-Delivered">Sold #${esc(o.no)}</span>`:'<span class="pill p-Ready">In stock</span>'}</span></button>`}).join(''):`<div class="empty"><b>Nothing in stock</b>Tap “Add to stock” when you finish abayas that aren’t for a specific order.</div>`}</div>`;
 }
 const VIEWS={
 home(){
@@ -464,6 +488,11 @@ orders(){
   <div class="group" id="olist">${olist()}</div>`;
 },
 designs(){
+  const head=seg('designs',[['list','Designs'],['stock',`In stock (${S.stock.filter(inStock).length})`]]);
+  if(ui.sub.designs==='stock')return head+stockView();
+  return head+VIEWS.designList();
+},
+designList(){
   if(!S.products.length)return `<div class="group"><div class="empty"><b>No designs yet</b>Add each abaya design with its fabric, tailoring and packaging costs to see its profit.</div></div>`;
   const cols=[...new Set(S.products.map(p=>p.collection||'No collection'))];
   return cols.map(c=>{
@@ -471,7 +500,7 @@ designs(){
     return `<h2>${esc(c)}</h2><div class="group">${ps.map(p=>{const cost=pcost(p),pr=n(p.price),mg=pr?((pr-cost)/pr*100):0,av=avail(p);
       return `<button class="row" data-act="edit-design" data-id="${esc(p.id)}">${p.photo?`<img class="thumb" src="${photoUrl(p.photo)}" alt="">`:`<span class="code">${esc(p.code)}</span>`}
       <span class="main"><span class="t">${esc(p.code)}</span><span class="s">${esc(p.baseMat||'')}${p.baseColor?' · '+esc(p.baseColor):''}</span>
-      <span class="s">Cost ${money(cost)} · ${n(p.made)?`${av} of ${n(p.made)} left`:'No stock recorded'}</span></span>
+      <span class="s">Cost ${money(cost)} · ${av?`${av} in stock`:'None in stock'}</span></span>
       <span class="end">${omr(pr)}<br><small class="${pr-cost<0?'neg':'pos'}">+${money(pr-cost)} · ${Math.round(mg)}%</small></span></button>`}).join('')}</div>`;
   }).join('');
 },
@@ -520,7 +549,7 @@ money(){
   const fab=sum(S.fabrics.filter(f=>inP(f.date,p)),fcost);
   const allExp=sum(es,e=>n(e.amount));
   const owed=sum(live(),o=>Math.max(0,oc(o).bal));
-  const fStock=sum(S.fabrics,f=>fleft(f)*fcpm(f)),aStock=sum(S.products,pp=>Math.max(0,avail(pp))*pcost(pp));
+  const fStock=sum(S.fabrics,f=>fleft(f)*fcpm(f)),aStock=sum(S.stock.filter(inStock),s=>n(s.cost));
   const best={};os.forEach(o=>(o.items||[]).forEach(i=>{if(i.code)best[i.code]=(best[i.code]||0)+n(i.qty)}));
   const bestL=Object.entries(best).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const line=(l,v,cls='')=>`<div class="row ${cls}"><span class="main t">${l}</span><span class="amt ${v<-0.0005?'neg':''}">${money(v)}</span></div>`;
@@ -594,10 +623,14 @@ function itemHTML(i){
   return `<div class="item"><button type="button" class="rm" data-sact="rmitem">Remove</button>
   <div class="f"><span>${R('Design')}</span><div class="dpick">${ps.map(p=>`<button type="button" class="dtile ${p.code===i.code?'on':''}" data-sact="pick" data-v="${esc(p.code)}" aria-pressed="${p.code===i.code}">${p.photo?`<img src="${photoUrl(p.photo)}" alt="" loading="lazy">`:'<i></i>'}<b>${esc(p.code)}</b></button>`).join('')}${!ps.length?'<p class="note">Add designs first on the Designs tab.</p>':''}</div></div>
   <input type="hidden" data-f="code" value="${esc(i.code||'')}">
+  <div class="spick">${stockOpts(i.code,i.stockId)}</div>
   <div class="grid3">${fld(A('Qty'),`<input data-f="qty" type="number" inputmode="numeric" min="1" value="${esc(i.qty??1)}">`,'af')}${fld(A('Price'),`<input data-f="price" type="number" inputmode="decimal" step="any" value="${esc(i.price??'')}">`,'af')}${fld('Discount %',`<input data-f="disc" type="number" inputmode="decimal" step="any" value="${esc(i.disc||'')}" placeholder="0">`)}</div>
   <input type="hidden" data-f="cost" value="${esc(i.cost??'')}"></div>`;
 }
-function readItems(){return $$('#sf .item').map(el=>{const g=f=>$(`[data-f="${f}"]`,el).value.trim();return {code:g('code'),qty:n(g('qty'))||1,price:n(g('price')),disc:n(g('disc')),cost:g('cost')===''?null:n(g('cost'))}}).filter(i=>i.code)}
+function readItems(){return $$('#sf .item').map(el=>{const g=f=>{const e=$(`[data-f="${f}"]`,el);return e?e.value.trim():''};const sid=g('stock');
+  const r={code:g('code'),qty:sid?1:(n(g('qty'))||1),price:n(g('price')),disc:n(g('disc')),cost:g('cost')===''?null:n(g('cost'))};if(sid)r.stockId=sid;return r}).filter(i=>i.code)}
+/* A piece taken from stock carries the cost it was made at. */
+function itemCost(i,isNew){const pc=i.stockId&&S.stock.find(s=>s.id===i.stockId);if(pc&&pc.cost!=null&&pc.cost!=='')return n(pc.cost);return (i.cost==null||isNew)?r3(pcost(prod(i.code))):i.cost}
 function readOrder(base){
   const r={...base,no:n(V('no'))||base.no,name:V('name'),phone:V('phone'),address:V('address'),date:V('date'),due:V('due'),status:V('status')||'New',
     items:readItems(),m:{length:V('mlen'),chest:V('mchest'),sleeves:V('msleeve'),notes:V('mnotes')},
@@ -611,6 +644,7 @@ function readOrder(base){
 function openOrder(o,prefill){
   const isNew=!o;
   o=o?clean(o):{no:nextNo(),date:today(),due:addDays(today(),10),delivery:2,status:'New',items:[{code:'',qty:1}],m:{},...(prefill||{})};
+  curOrderId=o.id||null;
   const cs=customers();
   let dueTouched=false;
   const body=`
@@ -643,7 +677,7 @@ function openOrder(o,prefill){
   openSheet(isNew?'New order':`Order #${esc(o.no)}`,body,{
     kind:'order',
     recalc(){const pw=$('#partwrap');if(pw)pw.hidden=V('paystate')!=='Part paid';
-      const x=oc(readOrder(o));const c=sum(readItems(),i=>n(i.qty)*(i.cost!=null&&!isNew?i.cost:pcost(prod(i.code))));
+      const x=oc(readOrder(o));const c=sum(readItems(),i=>n(i.qty)*itemCost(i,isNew));
       if(x.gift){$('#osum').innerHTML=`<div><span>Abayas value</span><span>${money(x.gross-x.disc)}</span></div>
       <div class="big"><span>Free gift — total</span><span>0.000 OMR</span></div><div><span>Payment expected</span><span>None</span></div>
       <div class="big"><span>Gift cost (expense)</span><span class="neg">${money(c)}</span></div>`;return}
@@ -657,14 +691,22 @@ function openOrder(o,prefill){
       $$('#sf .item').forEach(it=>{const c=$('[data-f="code"]',it),pr=$('[data-f="price"]',it);if(!c.value)miss.push($('.dpick',it));else if(!n(pr.value))miss.push(pr)});
       if(V('paystate')==='Part paid'&&!(n(V('paidamt'))>0))miss.push($('#sf [name="paidamt"]'));
       if(miss.length||!r.items.length){flag(miss);return}
-      r.items=r.items.map(i=>({...i,cost:(i.cost==null||isNew)?r3(pcost(prod(i.code))):i.cost}));
+      const sids=r.items.map(i=>i.stockId).filter(Boolean);
+      const dup=sids.find((s,k)=>sids.indexOf(s)!==k);
+      if(dup){flag($$('#sf [data-f="stock"]').filter(e=>e.value===dup));toast('The same stock piece is chosen twice');return}
+      const taken=sids.map(s=>stockUsedBy(s,o.id)).find(Boolean);
+      if(taken&&r.status!=='Cancelled'){toast(`A chosen stock piece is already sold on order #${taken.no}`);return}
+      r.items=r.items.map(i=>({...i,cost:r3(itemCost(i,isNew))}));
       if(await save('orders',r)){closeSheet();toast(isNew?'Order added':'Order saved')}
     },
     onDelete:isNew?null:async()=>{if(await remove('orders',o.id)){closeSheet();toast('Order deleted')}},
     onChange(t){
       if(t.name==='due')dueTouched=true;
       if(t.name==='date'&&isNew&&!dueTouched&&t.value)setV('due',addDays(t.value,10));
-      if(t.dataset.f==='code'){const it=t.closest('.item'),p=prod(t.value),pr=$('[data-f="price"]',it);if(p&&(!pr.value||isNew))pr.value=p.price||'';$('[data-f="cost"]',it).value='';}
+      if(t.dataset.f==='code'){const it=t.closest('.item'),p=prod(t.value),pr=$('[data-f="price"]',it);if(p&&(!pr.value||isNew))pr.value=p.price||'';$('[data-f="cost"]',it).value='';$('.spick',it).innerHTML=stockOpts(t.value,'');}
+      if(t.dataset.f==='stock'){const it=t.closest('.item'),pc=S.stock.find(s=>s.id===t.value),q=$('[data-f="qty"]',it);
+        if(pc){q.value=1;q.readOnly=true;$('[data-f="cost"]',it).value=pc.cost??'';if(pc.m){if(!V('mlen'))setV('mlen',pc.m.length||'');if(!V('mchest'))setV('mchest',pc.m.chest||'');if(!V('msleeve'))setV('msleeve',pc.m.sleeves||'')}}
+        else{q.readOnly=false;$('[data-f="cost"]',it).value=''}}
       if(t.name==='phone'&&isNew){const c=cs.find(c=>digits(c.phone)&&digits(c.phone)===digits(t.value));if(c){if(!V('name'))setV('name',c.name);if(!V('address'))setV('address',c.address);if(c.m){if(!V('mlen'))setV('mlen',c.m.length||'');if(!V('mchest'))setV('mchest',c.m.chest||'');if(!V('msleeve'))setV('msleeve',c.m.sleeves||'')}toast('Returning customer — details filled')}}
     },
     act(a,el){
@@ -673,6 +715,41 @@ function openOrder(o,prefill){
       if(a==='rmitem'){if($$('#sf .item').length>1)el.closest('.item').remove();else toast('An order needs at least one abaya')}
       if(a==='paidfull'){setV('paid',r3(oc(readOrder(o)).total))}
     }
+  });
+}
+
+/* ----- stock piece form ----- */
+function openStock(pc){
+  const isNew=!pc;
+  pc=pc?clean(pc):{made:today(),m:{}};
+  const used=!isNew&&stockUsedBy(pc.id);
+  const ps=[...S.products].sort((a,b)=>(a.code||'').localeCompare(b.code||'',undefined,{numeric:true}));
+  const m=pc.m||{};
+  const body=`${used?`<p class="note">Sold on order #${esc(used.no)}${used.name?' to '+esc(used.name):''}. Cancel or delete that order to put it back in stock.</p>`:''}
+  <fieldset><legend>Abaya</legend>
+    ${fld(R('Design'),sel('code',pc.code,ps.map(p=>[p.code,p.code+(p.baseMat?' · '+p.baseMat:'')+(p.baseColor?' · '+p.baseColor:'')]),'Choose…'))}
+    <div class="grid2">${isNew?fld('How many identical pieces',inp('qty',1,'number','inputmode="numeric" min="1"')):''}${fld('Date made',inp('made',pc.made,'date'))}</div>
+  </fieldset>
+  <fieldset><legend>Size</legend>
+    ${fld('Size',inp('size',pc.size,'text','placeholder="e.g. 54, M, Free size"'))}
+    <div class="grid3">${fld('Length',inp('mlen',m.length,'text','inputmode="decimal"'))}${fld('Chest width',inp('mchest',m.chest,'text','inputmode="decimal"'))}${fld('Sleeve from neck',inp('msleeve',m.sleeves,'text','inputmode="decimal"'))}</div>
+  </fieldset>
+  ${fld('Notes',`<textarea name="notes">${esc(pc.notes||'')}</textarea>`)}
+  <div class="sum" id="ssum"></div>`;
+  const costOf=code=>(!isNew&&code===pc.code&&pc.cost!=null&&pc.cost!=='')?n(pc.cost):r3(pcost(prod(code)));
+  openSheet(isNew?'Add to stock':'Stock piece · '+esc(pc.code||''),body,{
+    recalc(){const p=prod(V('code')),q=Math.round(n(V('qty')));
+      $('#ssum').innerHTML=p?`<div><span>Cost per piece</span><span>${money(costOf(p.code))}</span></div><div><span>Selling price</span><span>${money(n(p.price))}</span></div>${isNew&&q>1?`<div class="big"><span>Stock added at cost</span><span>${money(costOf(p.code)*q)} OMR</span></div>`:''}`:''},
+    async onSave(){
+      const code=V('code');if(!code){flag(['code']);return}
+      const r={...pc,code,made:V('made'),size:V('size'),m:{length:V('mlen'),chest:V('mchest'),sleeves:V('msleeve')},notes:V('notes'),cost:costOf(code)};
+      if(isNew){
+        const q=Math.min(50,Math.max(1,Math.round(n(V('qty'))||1)));
+        for(let k=0;k<q;k++){if(!await save('stock',{...r}))return}
+        closeSheet();toast(q>1?q+' abayas added to stock':'Added to stock');
+      }else if(await save('stock',r)){closeSheet();toast('Stock piece saved')}
+    },
+    onDelete:isNew||used?null:async()=>{if(await remove('stock',pc.id)){closeSheet();toast('Removed from stock')}}
   });
 }
 
@@ -713,13 +790,13 @@ function openDesign(p){
     <div class="grid3">${fld('Accessories cost',inp('acc',p.acc,'number'))}${fld(A('Tailoring'),inp('tailor',p.tailor,'number'),'af')}${fld(A('Packaging'),inp('pack',p.pack,'number'),'af')}</div>
   </fieldset>
   <fieldset><legend>Price and stock</legend>
-    <div class="grid2">${fld(R('Selling price'),inp('price',p.price,'number'))}${fld('Abayas made',inp('made',p.made,'number','inputmode="numeric"'))}</div>
-    ${!isNew?`<p class="note">${soldOf(p.code)} sold, ${avail(p)} left in stock.</p>`:''}
+    ${fld(R('Selling price'),inp('price',p.price,'number'))}
+    ${!isNew?`<p class="note">${soldOf(p.code)} sold, ${avail(p)} in stock. Record finished pieces under Designs › In stock.</p>`:''}
   </fieldset>
   ${fld('Notes',`<textarea name="notes">${esc(p.notes||'')}</textarea>`)}
   <div class="sum" id="psum"></div>`;
-  const F=['code','collection','photo','baseMat','baseColor','baseSup','baseCpm','baseM','partMat','partColor','partPos','partCpm','partM','lahafMat','lahafCpm','lahafM','accNote','acc','tailor','pack','price','made','notes'];
-  const NUM=['baseCpm','baseM','partCpm','partM','lahafCpm','lahafM','acc','tailor','pack','price','made'];
+  const F=['code','collection','photo','baseMat','baseColor','baseSup','baseCpm','baseM','partMat','partColor','partPos','partCpm','partM','lahafMat','lahafCpm','lahafM','accNote','acc','tailor','pack','price','notes'];
+  const NUM=['baseCpm','baseM','partCpm','partM','lahafCpm','lahafM','acc','tailor','pack','price'];
   const read=()=>{const r={...p};F.forEach(k=>{r[k]=NUM.includes(k)?(V(k)===''?'':n(V(k))):V(k)});return r};
   openSheet(isNew?'New design':esc(p.code),body,{
     recalc(){const r=read(),c=pcost(r),pr=n(r.price),sg=suggest(c);
@@ -902,6 +979,9 @@ document.addEventListener('click',e=>{
     case 'sub':ui.sub[el.dataset.t]=v;render();break;
     case 'of':ui.of=v;render();break;
     case 'ff':ui.ff=v;render();break;
+    case 'sf':ui.sf=v;render();break;
+    case 'new-stock':openStock();break;
+    case 'edit-stock':openStock(find('stock'));break;
     case 'period':ui.period=v;render();break;
     case 'goorders':ui.tab='orders';ui.sub.orders='list';ui.of=el.dataset.f;ui.q='';window.scrollTo(0,0);render();break;
     case 'cust':ui.sub.orders='list';ui.of='all';ui.q=el.dataset.k;render();break;
