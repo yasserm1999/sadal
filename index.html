@@ -596,7 +596,9 @@ function readOrder(base){
   const r={...base,no:n(V('no'))||base.no,name:V('name'),phone:V('phone'),address:V('address'),date:V('date'),due:V('due'),status:V('status')||'New',
     items:readItems(),m:{length:V('mlen'),chest:V('mchest'),sleeves:V('msleeve'),notes:V('mnotes')},
     delivery:n(V('delivery')),paid:0,method:'Bank transfer',notes:V('notes')};
-  if(V('paystate')==='Paid in full')r.paid=r3(oc(r).total);
+  const ps=V('paystate');
+  if(ps==='Paid in full')r.paid=r3(oc(r).total);
+  else if(ps==='Part paid')r.paid=r3(Math.max(0,Math.min(n(V('paidamt')),oc(r).total)));
   return r;
 }
 function openOrder(o,prefill){
@@ -625,14 +627,16 @@ function openOrder(o,prefill){
   </fieldset>
   <fieldset><legend>Payment</legend>
     ${fld(A('Delivery fee'),inp('delivery',o.delivery??'','number'),'af')}
-    <div class="f"><span>Payment</span>${radios('paystate',(n(o.paid)>0&&oc(o).bal<=0.0005)?'Paid in full':'Not paid yet',['Not paid yet','Paid in full'])}</div>
-    <p class="note">Paid in full always equals the order total, including delivery.</p>
+    <div class="f"><span>Payment</span>${radios('paystate',n(o.paid)>0?(oc(o).bal<=0.0005?'Paid in full':'Part paid'):'Not paid yet',['Not paid yet','Part paid','Paid in full'])}</div>
+    <div id="partwrap" ${n(o.paid)>0&&oc(o).bal>0.0005?'':'hidden'}>${fld(R('Amount paid (OMR)'),inp('paidamt',n(o.paid)>0&&oc(o).bal>0.0005?o.paid:'','number','min="0"'))}</div>
+    <p class="note">Paid in full always equals the order total, including delivery. Part paid records what the customer has given so far; the rest shows as balance due.</p>
   </fieldset>
   ${fld('Notes',`<textarea name="notes">${esc(o.notes||'')}</textarea>`)}
   <div class="sum" id="osum"></div>`;
   openSheet(isNew?'New order':`Order #${esc(o.no)}`,body,{
     kind:'order',
-    recalc(){const x=oc(readOrder(o));const c=sum(readItems(),i=>n(i.qty)*(i.cost!=null&&!isNew?i.cost:pcost(prod(i.code))));
+    recalc(){const pw=$('#partwrap');if(pw)pw.hidden=V('paystate')!=='Part paid';
+      const x=oc(readOrder(o));const c=sum(readItems(),i=>n(i.qty)*(i.cost!=null&&!isNew?i.cost:pcost(prod(i.code))));
       $('#osum').innerHTML=`<div><span>Abayas</span><span>${money(x.gross)}</span></div>${x.disc?`<div><span>Discount</span><span>−${money(x.disc)}</span></div>`:''}<div><span>Delivery</span><span>${money(n(V('delivery')))}</span></div>
       <div class="big"><span>Total</span><span>${money(x.total)} OMR</span></div><div><span>Paid</span><span>${money(x.total-x.bal)}</span></div>
       <div class="big"><span>${x.bal>0.0005?'Balance due':'Balance'}</span><span class="${x.bal>0.0005?'neg':''}">${money(Math.max(0,x.bal))}</span></div>
@@ -641,6 +645,7 @@ function openOrder(o,prefill){
       const r=readOrder(o);
       const miss=[];if(!r.phone)miss.push('phone');if(!r.name)miss.push('name');
       $$('#sf .item').forEach(it=>{const c=$('[data-f="code"]',it),pr=$('[data-f="price"]',it);if(!c.value)miss.push($('.dpick',it));else if(!n(pr.value))miss.push(pr)});
+      if(V('paystate')==='Part paid'&&!(n(V('paidamt'))>0))miss.push($('#sf [name="paidamt"]'));
       if(miss.length||!r.items.length){flag(miss);return}
       r.items=r.items.map(i=>({...i,cost:(i.cost==null||isNew)?r3(pcost(prod(i.code))):i.cost}));
       if(await save('orders',r)){closeSheet();toast(isNew?'Order added':'Order saved')}
