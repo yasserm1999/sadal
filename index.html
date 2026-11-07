@@ -105,6 +105,7 @@ button.row:active{background:var(--sunk)}
 .p-Unpaid{background:var(--bad-soft);color:var(--bad)}
 .p-Part{background:var(--warn-soft);color:var(--warn)}
 .p-Paid{background:var(--ok-soft);color:var(--ok)}
+.p-Gift{background:var(--plum-soft);color:var(--plum)}
 
 /* tiles */
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -343,11 +344,13 @@ const fleft=f=>Math.max(0,n(f.meters)-n(f.used));
 function oc(o){
   let gross=0,disc=0,cost=0,qty=0;
   (o.items||[]).forEach(i=>{const g=n(i.qty)*n(i.price);gross+=g;disc+=g*n(i.disc)/100;cost+=n(i.qty)*n(i.cost);qty+=n(i.qty)});
+  // A free gift charges nothing: no sale, no delivery, nothing owed. Its cost is expensed.
+  if(o.gift)return {gross,disc,sales:0,total:0,cost,qty,bal:0,profit:-cost,deliv:0,gift:true,value:gross-disc+n(o.delivery)};
   const sales=gross-disc,total=sales+n(o.delivery),bal=total-n(o.paid);
-  return {gross,disc,sales,total,cost,qty,bal,profit:total-cost};
+  return {gross,disc,sales,total,cost,qty,bal,profit:total-cost,deliv:n(o.delivery),gift:false};
 }
-function pay(o){const c=oc(o);if(c.total>0&&c.bal<=0.0005)return'Paid';if(n(o.paid)>0)return'Part';return'Unpaid'}
-const payLbl={Paid:'Paid',Part:'Part paid',Unpaid:'Unpaid'};
+function pay(o){if(o.gift)return'Gift';const c=oc(o);if(c.total>0&&c.bal<=0.0005)return'Paid';if(n(o.paid)>0)return'Part';return'Unpaid'}
+const payLbl={Paid:'Paid',Part:'Part paid',Unpaid:'Unpaid',Gift:'Free gift'};
 const live=()=>S.orders.filter(o=>o.status!=='Cancelled');
 function soldOf(code){return sum(live(),o=>sum(o.items||[],i=>i.code===code?n(i.qty):0))}
 const avail=p=>n(p.made)-soldOf(p.code);
@@ -505,12 +508,14 @@ money(){
       <span class="s">${fdate(e.date)}${e.note?' · '+esc(e.note):''}${e.by?' · paid by '+esc(e.by):''}</span></span><span class="end">${omr(n(e.amount))}</span></button>`).join(''):'<div class="empty"><b>No expenses in this period</b>Log ads, delivery, photography and other running costs.</div>'}</div>`;
   }
   const os=live().filter(o=>inP(o.date,p));
-  const gross=sum(os,o=>oc(o).gross),disc=sum(os,o=>oc(o).disc),deliv=sum(os,o=>n(o.delivery));
-  const rev=gross-disc+deliv,cogs=sum(os,o=>oc(o).cost),gp=rev-cogs;
+  const sold=os.filter(o=>!o.gift),gifts=os.filter(o=>o.gift);
+  const gross=sum(sold,o=>oc(o).gross),disc=sum(sold,o=>oc(o).disc),deliv=sum(sold,o=>oc(o).deliv);
+  const rev=gross-disc+deliv,cogs=sum(sold,o=>oc(o).cost),gp=rev-cogs;
+  const giftCost=sum(gifts,o=>oc(o).cost);
   const es=S.expenses.filter(e=>inP(e.date,p));
   const opex=es.filter(e=>!inCostCat(e.cat));
   const byCat={};opex.forEach(e=>byCat[e.cat]=(byCat[e.cat]||0)+n(e.amount));
-  const opT=sum(opex,e=>n(e.amount)),net=gp-opT;
+  const opT=sum(opex,e=>n(e.amount)),net=gp-opT-giftCost;
   const coll=sum(os,o=>Math.min(n(o.paid),oc(o).total));
   const fab=sum(S.fabrics.filter(f=>inP(f.date,p)),fcost);
   const allExp=sum(es,e=>n(e.amount));
@@ -528,9 +533,10 @@ money(){
     ${line(`Gross profit${rev?` <small style="color:var(--muted)">${Math.round(gp/rev*100)}%</small>`:''}`,gp,'tot')}
     ${Object.entries(byCat).map(([k,v])=>line(esc(k),-v,'sub')).join('')}
     ${line('Running expenses',-opT)}
+    ${gifts.length?line(`Free gifts (cost) <small style="color:var(--muted)">${gifts.length} order${gifts.length===1?'':'s'}</small>`,-giftCost):''}
     ${line('Net profit',net,'tot')}
   </div>
-  <p class="hint">${os.length} order${os.length===1?'':'s'} in this period, cancelled orders excluded. Cost of each abaya is taken from its design at the time the order was saved.</p>
+  <p class="hint">${os.length} order${os.length===1?'':'s'} in this period, cancelled orders excluded. Free gifts bring in no revenue; their abaya cost is counted as an expense. Cost of each abaya is taken from its design at the time the order was saved.</p>
   <h2>Cash</h2>
   <div class="group st">
     ${line('Collected on these orders',coll)}
@@ -550,7 +556,7 @@ money(){
 function filt(f,q){
   let os=[...S.orders];
   if(f==='open')os=os.filter(o=>OPEN.includes(o.status));
-  else if(f==='unpaid')os=os.filter(o=>o.status!=='Cancelled'&&pay(o)!=='Paid');
+  else if(f==='unpaid')os=os.filter(o=>o.status!=='Cancelled'&&!['Paid','Gift'].includes(pay(o)));
   else if(f!=='all')os=os.filter(o=>o.status===f);
   if(q){const s=q.toLowerCase(),d=digits(q);os=os.filter(o=>(o.name||'').toLowerCase().includes(s)||(d&&digits(o.phone).includes(d))||String(o.no)===q.replace('#','')||(o.items||[]).some(i=>(i.code||'').toLowerCase()===s))}
   return os;
@@ -597,6 +603,7 @@ function readOrder(base){
     items:readItems(),m:{length:V('mlen'),chest:V('mchest'),sleeves:V('msleeve'),notes:V('mnotes')},
     delivery:n(V('delivery')),paid:0,method:'Bank transfer',notes:V('notes')};
   const ps=V('paystate');
+  r.gift=ps==='Free gift';
   if(ps==='Paid in full')r.paid=r3(oc(r).total);
   else if(ps==='Part paid')r.paid=r3(Math.max(0,Math.min(n(V('paidamt')),oc(r).total)));
   return r;
@@ -627,9 +634,9 @@ function openOrder(o,prefill){
   </fieldset>
   <fieldset><legend>Payment</legend>
     ${fld(A('Delivery fee'),inp('delivery',o.delivery??'','number'),'af')}
-    <div class="f"><span>Payment</span>${radios('paystate',n(o.paid)>0?(oc(o).bal<=0.0005?'Paid in full':'Part paid'):'Not paid yet',['Not paid yet','Part paid','Paid in full'])}</div>
+    <div class="f"><span>Payment</span>${radios('paystate',o.gift?'Free gift':n(o.paid)>0?(oc(o).bal<=0.0005?'Paid in full':'Part paid'):'Not paid yet',['Not paid yet','Part paid','Paid in full','Free gift'])}</div>
     <div id="partwrap" ${n(o.paid)>0&&oc(o).bal>0.0005?'':'hidden'}>${fld(R('Amount paid (OMR)'),inp('paidamt',n(o.paid)>0&&oc(o).bal>0.0005?o.paid:'','number','min="0"'))}</div>
-    <p class="note">Paid in full always equals the order total, including delivery. Part paid records what the customer has given so far; the rest shows as balance due.</p>
+    <p class="note">Paid in full always equals the order total, including delivery. Part paid records what the customer has given so far; the rest shows as balance due. Free gift means no payment is expected — the abayas’ cost is booked as an expense.</p>
   </fieldset>
   ${fld('Notes',`<textarea name="notes">${esc(o.notes||'')}</textarea>`)}
   <div class="sum" id="osum"></div>`;
@@ -637,6 +644,9 @@ function openOrder(o,prefill){
     kind:'order',
     recalc(){const pw=$('#partwrap');if(pw)pw.hidden=V('paystate')!=='Part paid';
       const x=oc(readOrder(o));const c=sum(readItems(),i=>n(i.qty)*(i.cost!=null&&!isNew?i.cost:pcost(prod(i.code))));
+      if(x.gift){$('#osum').innerHTML=`<div><span>Abayas value</span><span>${money(x.gross-x.disc)}</span></div>
+      <div class="big"><span>Free gift — total</span><span>0.000 OMR</span></div><div><span>Payment expected</span><span>None</span></div>
+      <div class="big"><span>Gift cost (expense)</span><span class="neg">${money(c)}</span></div>`;return}
       $('#osum').innerHTML=`<div><span>Abayas</span><span>${money(x.gross)}</span></div>${x.disc?`<div><span>Discount</span><span>−${money(x.disc)}</span></div>`:''}<div><span>Delivery</span><span>${money(n(V('delivery')))}</span></div>
       <div class="big"><span>Total</span><span>${money(x.total)} OMR</span></div><div><span>Paid</span><span>${money(x.total-x.bal)}</span></div>
       <div class="big"><span>${x.bal>0.0005?'Balance due':'Balance'}</span><span class="${x.bal>0.0005?'neg':''}">${money(Math.max(0,x.bal))}</span></div>
@@ -843,12 +853,20 @@ async function invoicePDF(o){
   if(c.disc)tl('Discount','−'+money(c.disc));
   tl('Delivery',money(n(o.delivery)));
   x.save();x.strokeStyle=ink;x.lineWidth=2;x.beginPath();x.moveTo(L,y-24);x.lineTo(R,y-24);x.stroke();x.restore();y+=16;
+  if(c.gift){
+    tl('Gift','−'+money(c.value),{col:ok});
+    tl('Total (OMR)',money(0),{big:true});
+    y+=40;
+    x.fillStyle='#DFF0E7';const bw=360;x.beginPath();x.roundRect?x.roundRect(M,y-50,bw,70,35):x.rect(M,y-50,bw,70);x.fill();
+    T('With our compliments',M+bw/2,y-5,{size:24,w:700,col:ok,al:'center'});
+  }else{
   tl('Total (OMR)',money(c.total),{big:true});
   tl('Paid',money(c.total-c.bal));
   tl('Balance due',money(Math.max(0,c.bal)),{col:c.bal>0.0005?bad:ok});
   y+=40;
   x.fillStyle=pd?'#DFF0E7':'#F5E1E5';const bw=360;x.beginPath();x.roundRect?x.roundRect(M,y-50,bw,70,35):x.rect(M,y-50,bw,70);x.fill();
   T(pd?'Paid by bank transfer':'Payment by bank transfer',M+bw/2,y-5,{size:24,w:700,col:pd?ok:bad,al:'center'});
+  }
   HL(H-190,brass,[16,11]);
   T('Thank you for choosing Sadal.',W/2,H-120,{size:34,w:600,fam:SERIF,al:'center'});
   try{
@@ -867,10 +885,10 @@ async function doSave(filename,data){
 }
 function csvCell(v){v=String(v??'');return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
 function exportCSV(){
-  const rows=[['Order #','Date','Due','Status','Customer','Phone','Address','Design','Qty','Price','Discount %','Line total','Line cost','Delivery','Order total','Paid','Balance','Length','Chest','Sleeves','Notes']];
+  const rows=[['Order #','Date','Due','Status','Customer','Phone','Address','Design','Qty','Price','Discount %','Line total','Line cost','Delivery','Order total','Paid','Balance','Length','Chest','Sleeves','Notes','Free gift']];
   [...S.orders].sort((a,b)=>n(a.no)-n(b.no)).forEach(o=>{const c=oc(o);(o.items&&o.items.length?o.items:[{}]).forEach((i,k)=>{
     const lt=n(i.qty)*n(i.price)*(1-n(i.disc)/100);
-    rows.push([o.no,o.date,o.due,o.status,o.name,o.phone,o.address,i.code,i.qty,i.price,i.disc,r3(lt),r3(n(i.qty)*n(i.cost)),k?'':o.delivery,k?'':r3(c.total),k?'':o.paid,k?'':r3(c.bal),o.m&&o.m.length,o.m&&o.m.chest,o.m&&o.m.sleeves,k?'':o.notes])})});
+    rows.push([o.no,o.date,o.due,o.status,o.name,o.phone,o.address,i.code,i.qty,i.price,i.disc,r3(lt),r3(n(i.qty)*n(i.cost)),k?'':o.delivery,k?'':r3(c.total),k?'':o.paid,k?'':r3(c.bal),o.m&&o.m.length,o.m&&o.m.chest,o.m&&o.m.sleeves,k?'':o.notes,k?'':(o.gift?'Yes':'')])})});
   doSave(`sadal-orders-${today()}.csv`,'\ufeff'+rows.map(r=>r.map(csvCell).join(',')).join('\n'));
 }
 
