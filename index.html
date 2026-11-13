@@ -214,6 +214,10 @@ input.miss,select.miss{border-color:var(--bad)!important;box-shadow:0 0 0 3px va
 .toast.act{pointer-events:auto;display:flex;align-items:center;gap:14px}
 .tundo{border:0;background:none;color:var(--brass-soft);font-weight:700;padding:4px 2px;font-size:14px;text-decoration:underline}
 .row.orow{cursor:pointer}
+.row.frow{cursor:pointer}
+.row.frow:active{background:var(--sunk)}
+button.drw{flex:none;align-self:center;border:1px dashed var(--line);background:var(--surface);color:var(--muted);border-radius:999px;font:inherit;font-size:12px;font-weight:700;padding:5px 10px;white-space:nowrap;cursor:pointer}
+button.drw.set{border-style:solid;border-color:var(--brass);color:var(--brass);background:var(--brass-soft)}
 .row.orow:active{background:var(--sunk)}
 button.next{margin-top:7px;border:1.5px solid currentColor;background:transparent!important;border-radius:999px;font:inherit;font-size:13px;font-weight:700;padding:5px 12px;cursor:pointer;white-space:nowrap}
 button.next:active{filter:brightness(.9)}
@@ -598,10 +602,10 @@ fabric(){
   return head+`<div class="chips"><button class="chip ${ui.ff==='stock'?'on':''}" data-act="ff" data-v="stock">In stock</button><button class="chip ${ui.ff==='all'?'on':''}" data-act="ff" data-v="all">All purchases</button></div>
   <p class="hint">Fabric in stock is worth ${money(val)} OMR at cost.</p>
   <div class="group">${fs.length?fs.map(f=>{const pct=n(f.meters)?fleft(f)/n(f.meters)*100:0;
-    return `<button class="row" data-act="edit-fabric" data-id="${esc(f.id)}"><span class="main"><span class="t">${esc(f.mat||'Fabric')} · ${esc(f.color||'')}</span>
+    return `<div class="row frow" role="button" tabindex="0" data-act="edit-fabric" data-id="${esc(f.id)}"><span class="main"><span class="t">${esc(f.mat||'Fabric')} · ${esc(f.color||'')}</span>
     <span class="s">${esc(f.supplier||'')}${f.use?' · '+esc(f.use):''}${f.date?' · '+fdate(f.date):''}</span>
     <span class="bar ${fleft(f)<3?'low':''}"><i style="width:${Math.min(100,pct)}%"></i></span></span>
-    <span class="end"><span class="amt">${r3(fleft(f))} m</span><br><small style="color:var(--muted)">${money(fcpm(f))}/m</small></span></button>`}).join(''):'<div class="empty"><b>Nothing here</b>Add a fabric purchase to track meters and cost per meter.</div>'}</div>`;
+    <span class="end"><span class="amt">${r3(fleft(f))} m</span><br><small style="color:var(--muted)">${money(fcpm(f))}/m</small></span>${canWrite||f.drawer?`<button type="button" class="drw ${f.drawer?'set':''}" data-act="drawer" data-id="${esc(f.id)}" aria-label="${f.drawer?'Drawer '+esc(f.drawer)+', change':'Add drawer number'}">${f.drawer?'Drawer '+esc(f.drawer):'+ Drawer'}</button>`:''}</div>`}).join(''):'<div class="empty"><b>Nothing here</b>Add a fabric purchase to track meters and cost per meter.</div>'}</div>`;
 },
 money(){
   const head=seg('money',[['summary','Summary'],['exp','Expenses'],['cash','Cash']]);
@@ -815,6 +819,17 @@ function openOrder(o,prefill){
   });
 }
 
+/* ----- drawer number for a fabric ----- */
+function openDrawer(f){
+  if(!f)return;
+  if(!canWrite){toast(f.drawer?'In drawer '+f.drawer:'No drawer recorded');return}
+  openSheet('Drawer · '+esc(f.mat||'Fabric')+(f.color?' · '+esc(f.color):''),
+    fld('Drawer number',inp('drawer',f.drawer,'text','inputmode="numeric" placeholder="e.g. 4" autofocus'))+'<p class="note">Where this fabric is kept, so it can be found quickly.</p>',{
+    saveLabel:'Save drawer',
+    async onSave(){if(await save('fabrics',{...f,drawer:V('drawer')})){closeSheet();toast(V('drawer')?'Drawer saved':'Drawer cleared')}}
+  });
+}
+
 /* ----- stock piece form ----- */
 function openStock(pc){
   const isNew=!pc;
@@ -931,12 +946,12 @@ function openFabric(f){
     ${fld(A('VAT'),sel('vat',f.vat,[['inc','Included in price'],['exc','Not included (+5%)'],['none','No VAT']]),'af')}
   </fieldset>
   <fieldset><legend>Stock</legend>
-    ${fld('Meters used so far',inp('used',f.used||'','number'))}
+    <div class="grid2">${fld('Meters used so far',inp('used',f.used||'','number'))}${fld('Drawer no.',inp('drawer',f.drawer,'text','inputmode="numeric" placeholder="e.g. 4"'))}</div>
     <div class="grid2">${fld('Use more meters',`<input data-x="use" type="number" inputmode="decimal" step="any" placeholder="e.g. 3">`)}<label class="f"><span>&nbsp;</span><button type="button" class="btn" style="width:100%" data-sact="usem">Take from stock</button></label></div>
   </fieldset>
   ${fld('Notes',`<textarea name="notes">${esc(f.notes||'')}</textarea>`)}
   <div class="sum" id="fsum"></div>`;
-  const read=()=>({...f,supplier:V('supplier'),mat:V('mat'),color:V('color'),use:V('use'),date:V('date'),pos:V('pos'),total:n(V('total')),meters:n(V('meters')),vat:V('vat'),used:n(V('used')),notes:V('notes')});
+  const read=()=>({...f,supplier:V('supplier'),mat:V('mat'),color:V('color'),use:V('use'),date:V('date'),pos:V('pos'),total:n(V('total')),meters:n(V('meters')),vat:V('vat'),used:n(V('used')),drawer:V('drawer'),notes:V('notes')});
   openSheet(isNew?'Add fabric':esc(f.mat||'Fabric'),body,{
     recalc(){const r=read();$('#fsum').innerHTML=`<div><span>Total cost</span><span>${money(fcost(r))}</span></div><div class="big"><span>Cost per meter</span><span>${money(fcpm(r))} OMR</span></div><div><span>Meters left</span><span class="${fleft(r)<3?'neg':''}">${r3(fleft(r))}</span></div>`},
     async onSave(){const r=read();const miss=[];if(!r.supplier)miss.push('supplier');if(!r.mat)miss.push('mat');if(!r.total)miss.push('total');if(!r.meters)miss.push('meters');if(miss.length){flag(miss);return}
@@ -1093,6 +1108,7 @@ document.addEventListener('click',e=>{
     case 'new-design':openDesign();break;
     case 'edit-design':openDesign(find('products'));break;
     case 'new-fabric':openFabric();break;
+    case 'drawer':openDrawer(find('fabrics'));break;
     case 'edit-fabric':openFabric(find('fabrics'));break;
     case 'new-supplier':openSupplier();break;
     case 'edit-supplier':openSupplier(find('suppliers'));break;
