@@ -129,7 +129,7 @@ button.row:active{background:var(--sunk)}
 
 /* bottom nav */
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
-nav.tabs .in{display:grid;grid-template-columns:repeat(5,1fr);max-width:720px;margin:0 auto}
+nav.tabs .in{display:grid;grid-template-columns:repeat(6,1fr);max-width:720px;margin:0 auto}
 nav.tabs button{border:0;background:none;padding:8px 2px 7px;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600;color:var(--muted)}
 nav.tabs button.on{color:var(--brass)}
 nav.tabs svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
@@ -393,10 +393,11 @@ function customers(){
 const ICON={
   home:'<svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/></svg>',
   orders:'<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>',
+  stock:'<svg viewBox="0 0 24 24"><path d="M12 7a2 2 0 1 0-2-2"/><path d="M12 7v2L3 16.5a1 1 0 0 0 .7 1.5h16.6a1 1 0 0 0 .7-1.5L12 9"/></svg>',
   designs:'<svg viewBox="0 0 24 24"><path d="M9 3h6l1.5 3L20 21H4L7.5 6z"/><path d="M9 3c0 2 1.3 3 3 3s3-1 3-3"/></svg>',
   fabric:'<svg viewBox="0 0 24 24"><ellipse cx="7" cy="12" rx="3" ry="7"/><path d="M7 5h11a3 7 0 0 1 0 14H7"/><path d="M18 19v2"/></svg>',
   money:'<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9.5v5M18 9.5v5"/></svg>'};
-const TABS=[['home','Home'],['orders','Orders'],['designs','Designs'],['fabric','Fabric'],['money','Money']];
+const TABS=[['home','Home'],['orders','Orders'],['stock','Stock'],['designs','Designs'],['fabric','Fabric'],['money','Money']];
 let pending=false;
 function schedule(){if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;render()})}
 function render(){
@@ -419,7 +420,7 @@ function render(){
   if(!ready&&mode!=='local')h='<div class="empty">Loading your records…</div>';
   else h=(!canWrite?'<div class="ro">You have view-only access. Ask the owner to make you an Editor to add or change records.</div>':'')+VIEWS[ui.tab]();
   $('#main').innerHTML=h;
-  const fab=$('#fab'),F={orders:ui.sub.orders==='list'?['new-order','New order']:null,designs:ui.sub.designs==='stock'?['new-stock','Add to stock']:['new-design','New design'],fabric:ui.sub.fabric==='fabric'?['new-fabric','Add fabric']:['new-supplier','Add supplier'],money:ui.sub.money==='exp'?['new-expense','Add expense']:null,home:['new-order','New order']}[ui.tab];
+  const fab=$('#fab'),F={orders:ui.sub.orders==='list'?['new-order','New order']:null,designs:['new-design','New design'],stock:['new-stock','Add abaya'],fabric:ui.sub.fabric==='fabric'?['new-fabric','Add fabric']:['new-supplier','Add supplier'],money:ui.sub.money==='exp'?['new-expense','Add expense']:null,home:['new-order','New order']}[ui.tab];
   if(F&&canWrite&&ready){fab.hidden=false;fab.dataset.act=F[0];fab.innerHTML=`<span>+</span>${F[1]}`}else fab.hidden=true;
   if(keep){const q=$('#q');if(q){q.focus();try{q.setSelectionRange(keep[0],keep[1])}catch(e){}}}
 }
@@ -446,11 +447,12 @@ function stockView(){
   const here=all.filter(x=>!x.o);
   const list=(ui.sf==='stock'?here:all).sort((a,b)=>(a.s.code||'').localeCompare(b.s.code||'',undefined,{numeric:true})||(a.s.made||'').localeCompare(b.s.made||''));
   return `<div class="chips"><button class="chip ${ui.sf==='stock'?'on':''}" data-act="sf" data-v="stock">In stock<span class="c">${here.length}</span></button><button class="chip ${ui.sf==='all'?'on':''}" data-act="sf" data-v="all">All, incl. sold<span class="c">${all.length}</span></button></div>
-  <p class="hint">${here.length} abaya${here.length===1?'':'s'} in stock, worth ${money(sum(here,x=>n(x.s.cost)))} OMR at cost. To sell one: New order → pick the design → choose the piece under “From stock”.</p>
+  <p class="hint">${here.length} abaya${here.length===1?'':'s'} ready for immediate delivery, worth ${money(sum(here,x=>n(x.s.cost)))} OMR at cost. Tap “Sell” to start an order with that piece.</p>
   <div class="group">${list.length?list.map(({s,o})=>{const p=prod(s.code)||{};
-    return `<button class="row" data-act="edit-stock" data-id="${esc(s.id)}">${p.photo?`<img class="thumb" src="${photoUrl(p.photo)}" alt="">`:`<span class="code">${esc(s.code)}</span>`}
-    <span class="main"><span class="t">${esc(s.code)} · ${esc(pieceLbl(s))}</span><span class="s">${s.made?'Made '+esc(fdate(s.made)):'No date'}${s.notes?' · '+esc(s.notes):''}</span></span>
-    <span class="end">${omr(n(p.price))}<br>${o?`<span class="pill p-Delivered">Sold #${esc(o.no)}</span>`:'<span class="pill p-Ready">In stock</span>'}</span></button>`}).join(''):`<div class="empty"><b>Nothing in stock</b>Tap “Add to stock” when you finish abayas that aren’t for a specific order.</div>`}</div>`;
+    return `<div class="row orow" role="button" tabindex="0" data-act="edit-stock" data-id="${esc(s.id)}">${p.photo?`<img class="thumb" src="${photoUrl(p.photo)}" alt="">`:`<span class="code">${esc(s.code)}</span>`}
+    <span class="main"><span class="t">${esc(s.code)} · ${esc(pieceLbl(s))}</span><span class="s">${[p.baseMat,p.baseColor].filter(Boolean).map(esc).join(' · ')}</span><span class="s">${s.made?'Made '+esc(fdate(s.made)):'No date'}${s.notes?' · '+esc(s.notes):''}</span>
+    ${!o&&canWrite?`<span class="racts"><button type="button" class="next p-Ready" data-act="sell-stock" data-id="${esc(s.id)}">Sell ›</button></span>`:''}</span>
+    <span class="end">${omr(n(p.price))}<br>${o?`<span class="pill p-Delivered">Sold #${esc(o.no)}</span>`:'<span class="pill p-Ready">Available</span>'}</span></div>`}).join(''):`<div class="empty"><b>Nothing ready-made yet</b>Tap “Add abaya” when you finish abayas that aren’t for a specific order.</div>`}</div>`;
 }
 const VIEWS={
 home(){
@@ -488,10 +490,9 @@ orders(){
   <div class="group" id="olist">${olist()}</div>`;
 },
 designs(){
-  const head=seg('designs',[['list','Designs'],['stock',`In stock (${S.stock.filter(inStock).length})`]]);
-  if(ui.sub.designs==='stock')return head+stockView();
-  return head+VIEWS.designList();
+  return VIEWS.designList();
 },
+stock(){return stockView()},
 designList(){
   if(!S.products.length)return `<div class="group"><div class="empty"><b>No designs yet</b>Add each abaya design with its fabric, tailoring and packaging costs to see its profit.</div></div>`;
   const cols=[...new Set(S.products.map(p=>p.collection||'No collection'))];
@@ -982,6 +983,9 @@ document.addEventListener('click',e=>{
     case 'sf':ui.sf=v;render();break;
     case 'new-stock':openStock();break;
     case 'edit-stock':openStock(find('stock'));break;
+    case 'sell-stock':{const s=find('stock');if(!s||!inStock(s)){toast('That piece is no longer available');break}
+      const p=prod(s.code)||{};
+      openOrder(null,{items:[{code:s.code,qty:1,price:n(p.price)||'',stockId:s.id}],m:{length:(s.m&&s.m.length)||'',chest:(s.m&&s.m.chest)||'',sleeves:(s.m&&s.m.sleeves)||''},status:'Ready'});break}
     case 'period':ui.period=v;render();break;
     case 'goorders':ui.tab='orders';ui.sub.orders='list';ui.of=el.dataset.f;ui.q='';window.scrollTo(0,0);render();break;
     case 'cust':ui.sub.orders='list';ui.of='all';ui.q=el.dataset.k;render();break;
