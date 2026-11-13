@@ -277,6 +277,7 @@ const PAYM=['Cash','Bank transfer','Card'];
 const COLS=['orders','products','fabrics','suppliers','expenses','stock','cash'];
 const S={orders:[],products:[],fabrics:[],suppliers:[],expenses:[],stock:[],cash:[]};
 /* Bank entries that aren't orders, expenses or fabric. 'balance' is a reading from the bank app. */
+const SIZES=['50','52','54','56','58','60'];
 const CASH_IN=['Owner deposit','Other money in'];
 const CASH_OUT=['Owner withdrawal','Bank charges','Refund to customer','Other money out'];
 const loaded=new Set();
@@ -829,7 +830,7 @@ function openStock(pc){
     <div class="grid2">${isNew?fld('How many identical pieces',inp('qty',1,'number','inputmode="numeric" min="1"')):''}${fld('Date made',inp('made',pc.made,'date'))}</div>
   </fieldset>
   <fieldset><legend>Size</legend>
-    ${fld('Size',inp('size',pc.size,'text','placeholder="e.g. 54, M, Free size"'))}
+    ${fld('Size',sel('size',pc.size,[...SIZES,...(pc.size&&!SIZES.includes(String(pc.size))?[String(pc.size)]:[])],'Choose…'))}
     <div class="grid3">${fld('Length',inp('mlen',m.length,'text','inputmode="decimal"'))}${fld('Chest width',inp('mchest',m.chest,'text','inputmode="decimal"'))}${fld('Sleeve from neck',inp('msleeve',m.sleeves,'text','inputmode="decimal"'))}</div>
   </fieldset>
   ${fld('Notes',`<textarea name="notes">${esc(pc.notes||'')}</textarea>`)}
