@@ -217,7 +217,8 @@ input.miss,select.miss{border-color:var(--bad)!important;box-shadow:0 0 0 3px va
 .row.frow{cursor:pointer}
 .row.frow:active{background:var(--sunk)}
 button.drw{flex:none;align-self:center;border:1px dashed var(--line);background:var(--surface);color:var(--muted);border-radius:999px;font:inherit;font-size:12px;font-weight:700;padding:5px 10px;white-space:nowrap;cursor:pointer}
-button.drw.set{border-style:solid;border-color:var(--brass);color:var(--brass);background:var(--brass-soft)}
+button.drw.set{border-style:solid;color:#fff}
+button.drw .sw{display:inline-block;width:8px;height:8px;border-radius:50%;background:#fff;margin-right:5px;vertical-align:1px;opacity:.85}
 .row.orow:active{background:var(--sunk)}
 button.next{margin-top:7px;border:1.5px solid currentColor;background:transparent!important;border-radius:999px;font:inherit;font-size:13px;font-weight:700;padding:5px 12px;cursor:pointer;white-space:nowrap}
 button.next:active{filter:brightness(.9)}
@@ -282,6 +283,10 @@ const COLS=['orders','products','fabrics','suppliers','expenses','stock','cash']
 const S={orders:[],products:[],fabrics:[],suppliers:[],expenses:[],stock:[],cash:[]};
 /* Bank entries that aren't orders, expenses or fabric. 'balance' is a reading from the bank app. */
 const SIZES=['50','52','54','56','58','60'];
+/* The workshop's drawers are colour-coded: 1 green, 2 red, 3 blue, 4 orange, 5–8 brown. */
+const DRAWERS=['1','2','3','4','5','6','7','8'];
+const DRAWER_COL={1:['Green','#2e7d4f'],2:['Red','#b3261e'],3:['Blue','#1f5fa8'],4:['Orange','#d9731a'],5:['Brown','#7a4b2a'],6:['Brown','#7a4b2a'],7:['Brown','#7a4b2a'],8:['Brown','#7a4b2a']};
+const drawerOpts=v=>[...DRAWERS.map(d=>[d,d+' · '+DRAWER_COL[d][0]]),...(v&&!DRAWERS.includes(String(v))?[[String(v),String(v)]]:[])];
 const CASH_IN=['Owner deposit','Other money in'];
 const CASH_OUT=['Owner withdrawal','Bank charges','Refund to customer','Other money out'];
 const loaded=new Set();
@@ -605,7 +610,7 @@ fabric(){
     return `<div class="row frow" role="button" tabindex="0" data-act="edit-fabric" data-id="${esc(f.id)}"><span class="main"><span class="t">${esc(f.mat||'Fabric')} · ${esc(f.color||'')}</span>
     <span class="s">${esc(f.supplier||'')}${f.use?' · '+esc(f.use):''}${f.date?' · '+fdate(f.date):''}</span>
     <span class="bar ${fleft(f)<3?'low':''}"><i style="width:${Math.min(100,pct)}%"></i></span></span>
-    <span class="end"><span class="amt">${r3(fleft(f))} m</span><br><small style="color:var(--muted)">${money(fcpm(f))}/m</small></span>${canWrite||f.drawer?`<button type="button" class="drw ${f.drawer?'set':''}" data-act="drawer" data-id="${esc(f.id)}" aria-label="${f.drawer?'Drawer '+esc(f.drawer)+', change':'Add drawer number'}">${f.drawer?'Drawer '+esc(f.drawer):'+ Drawer'}</button>`:''}</div>`}).join(''):'<div class="empty"><b>Nothing here</b>Add a fabric purchase to track meters and cost per meter.</div>'}</div>`;
+    <span class="end"><span class="amt">${r3(fleft(f))} m</span><br><small style="color:var(--muted)">${money(fcpm(f))}/m</small></span>${canWrite||f.drawer?`<button type="button" class="drw ${f.drawer?'set':''}" ${f.drawer&&DRAWER_COL[f.drawer]?`style="background:${DRAWER_COL[f.drawer][1]};border-color:${DRAWER_COL[f.drawer][1]}"`:''} data-act="drawer" data-id="${esc(f.id)}" aria-label="${f.drawer?'Drawer '+esc(f.drawer)+', change':'Add drawer number'}">${f.drawer?'<i class="sw"></i>Drawer '+esc(f.drawer):'+ Drawer'}</button>`:''}</div>`}).join(''):'<div class="empty"><b>Nothing here</b>Add a fabric purchase to track meters and cost per meter.</div>'}</div>`;
 },
 money(){
   const head=seg('money',[['summary','Summary'],['exp','Expenses'],['cash','Cash']]);
@@ -824,7 +829,7 @@ function openDrawer(f){
   if(!f)return;
   if(!canWrite){toast(f.drawer?'In drawer '+f.drawer:'No drawer recorded');return}
   openSheet('Drawer · '+esc(f.mat||'Fabric')+(f.color?' · '+esc(f.color):''),
-    fld('Drawer number',inp('drawer',f.drawer,'text','inputmode="numeric" placeholder="e.g. 4" autofocus'))+'<p class="note">Where this fabric is kept, so it can be found quickly.</p>',{
+    fld('Drawer',sel('drawer',f.drawer,drawerOpts(f.drawer),'None'))+'<p class="note">Where this fabric is kept, so it can be found quickly.</p>',{
     saveLabel:'Save drawer',
     async onSave(){if(await save('fabrics',{...f,drawer:V('drawer')})){closeSheet();toast(V('drawer')?'Drawer saved':'Drawer cleared')}}
   });
@@ -946,7 +951,7 @@ function openFabric(f){
     ${fld(A('VAT'),sel('vat',f.vat,[['inc','Included in price'],['exc','Not included (+5%)'],['none','No VAT']]),'af')}
   </fieldset>
   <fieldset><legend>Stock</legend>
-    <div class="grid2">${fld('Meters used so far',inp('used',f.used||'','number'))}${fld('Drawer no.',inp('drawer',f.drawer,'text','inputmode="numeric" placeholder="e.g. 4"'))}</div>
+    <div class="grid2">${fld('Meters used so far',inp('used',f.used||'','number'))}${fld('Drawer',sel('drawer',f.drawer,drawerOpts(f.drawer),'None'))}</div>
     <div class="grid2">${fld('Use more meters',`<input data-x="use" type="number" inputmode="decimal" step="any" placeholder="e.g. 3">`)}<label class="f"><span>&nbsp;</span><button type="button" class="btn" style="width:100%" data-sact="usem">Take from stock</button></label></div>
   </fieldset>
   ${fld('Notes',`<textarea name="notes">${esc(f.notes||'')}</textarea>`)}
