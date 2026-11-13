@@ -705,7 +705,7 @@ function itemHTML(i){
   ${ready.length?`<div class="mtabs">${tab('make','Made to order')}${tab('ready',`Ready abaya (${ready.length})`)}</div>`:''}
   <div class="m-make"><div class="f"><span>${R('Design')}</span><div class="dpick">${ps.map(p=>`<button type="button" class="dtile ${p.code===i.code&&!i.stockId?'on':''}" data-sact="pick" data-v="${esc(p.code)}" aria-pressed="${p.code===i.code&&!i.stockId}">${p.photo?`<img src="${photoUrl(p.photo)}" alt="" loading="lazy">`:'<i></i>'}<b>${esc(p.code)}</b></button>`).join('')}${!ps.length?'<p class="note">Add designs first on the Designs tab.</p>':''}</div></div></div>
   <div class="m-ready"><div class="f"><span>${R('Ready abaya')}</span><div class="dpick">${ready.map(s=>{const p=prod(s.code)||{};return `<button type="button" class="dtile ${s.id===i.stockId?'on':''}" data-sact="pickready" data-v="${esc(s.id)}" aria-pressed="${s.id===i.stockId}">${p.photo?`<img src="${photoUrl(p.photo)}" alt="" loading="lazy">`:'<i></i>'}<b>${esc(s.code)}</b><small>${esc(s.size?'Size '+s.size:(s.m&&s.m.length?'L '+s.m.length:'No size'))}</small></button>`}).join('')}</div></div>
-    <p class="note rdesc">${sp?esc(readyDesc(sp)):'Tap the abaya the customer is taking. Its size and measurements come with it.'}</p></div>
+    <p class="note rdesc">${sp?esc(readyDesc(sp)):'Tap the abaya the customer is taking. It comes in its standard size.'}</p></div>
   <input type="hidden" data-f="code" value="${esc(i.code||'')}"><input type="hidden" data-f="stock" value="${esc(i.stockId||'')}">
   <div class="grid3">${fld(A('Qty'),`<input data-f="qty" type="number" inputmode="numeric" min="1" value="${esc(i.qty??1)}">`,'af qtyf')}${fld(A('Price'),`<input data-f="price" type="number" inputmode="decimal" step="any" value="${esc(i.price??'')}">`,'af')}${fld('Discount %',`<input data-f="disc" type="number" inputmode="decimal" step="any" value="${esc(i.disc||'')}" placeholder="0">`)}</div>
   <input type="hidden" data-f="cost" value="${esc(i.cost??'')}"></div>`;
@@ -830,8 +830,7 @@ function openStock(pc){
     <div class="grid2">${isNew?fld('How many identical pieces',inp('qty',1,'number','inputmode="numeric" min="1"')):''}${fld('Date made',inp('made',pc.made,'date'))}</div>
   </fieldset>
   <fieldset><legend>Size</legend>
-    ${fld('Size',sel('size',pc.size,[...SIZES,...(pc.size&&!SIZES.includes(String(pc.size))?[String(pc.size)]:[])],'Choose…'))}
-    <div class="grid3">${fld('Length',inp('mlen',m.length,'text','inputmode="decimal"'))}${fld('Chest width',inp('mchest',m.chest,'text','inputmode="decimal"'))}${fld('Sleeve from neck',inp('msleeve',m.sleeves,'text','inputmode="decimal"'))}</div>
+    ${fld(R('Size'),sel('size',pc.size,[...SIZES,...(pc.size&&!SIZES.includes(String(pc.size))?[String(pc.size)]:[])],'Choose…'))}
   </fieldset>
   ${fld('Notes',`<textarea name="notes">${esc(pc.notes||'')}</textarea>`)}
   <div class="sum" id="ssum"></div>`;
@@ -842,8 +841,8 @@ function openStock(pc){
       $('#sdesc').textContent=p?[p.code,p.baseMat,p.baseColor].filter(Boolean).join(' · '):'';
       $('#ssum').innerHTML=p?`<div><span>Cost per piece</span><span>${money(costOf(p.code))}</span></div><div><span>Selling price</span><span>${money(n(p.price))}</span></div>${isNew&&q>1?`<div class="big"><span>Total at cost</span><span>${money(costOf(p.code)*q)} OMR</span></div>`:''}`:''},
     async onSave(){
-      const code=V('code');if(!code){flag([$('#sf .dpick')]);return}
-      const r={...pc,code,made:V('made'),size:V('size'),m:{length:V('mlen'),chest:V('mchest'),sleeves:V('msleeve')},notes:V('notes'),cost:costOf(code)};
+      const code=V('code');if(!code){flag([$('#sf .dpick')]);return}if(!V('size')){flag(['size']);return}
+      const r={...pc,code,made:V('made'),size:V('size'),notes:V('notes'),cost:costOf(code)};
       if(isNew){
         const q=Math.min(50,Math.max(1,Math.round(n(V('qty'))||1)));
         for(let k=0;k<q;k++){if(!await save('stock',{...r}))return}
