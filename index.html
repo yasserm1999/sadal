@@ -130,7 +130,7 @@ button.row:active{background:var(--sunk)}
 /* bottom nav */
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
 nav.tabs .in{display:grid;grid-template-columns:repeat(6,1fr);max-width:720px;margin:0 auto}
-nav.tabs button{border:0;background:none;padding:8px 2px 7px;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600;color:var(--muted)}
+nav.tabs button{border:0;background:none;padding:8px 2px 7px;text-align:center;line-height:1.15;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600;color:var(--muted)}
 nav.tabs button.on{color:var(--brass)}
 nav.tabs svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .fab{position:fixed;right:max(18px,calc(50% - 342px));bottom:calc(74px + env(safe-area-inset-bottom,0px));z-index:6;height:54px;border-radius:27px;border:0;background:var(--brass);color:var(--brass-ink);font-weight:700;font-size:15px;padding:0 20px 0 16px;display:flex;align-items:center;gap:6px;box-shadow:0 6px 18px rgba(90,10,35,.28)}
@@ -269,8 +269,11 @@ const inCostCat=c=>!!(EXP_CATS.find(x=>x.n===c)||{}).inCost;
 const PAYM=['Cash','Bank transfer','Card'];
 
 /* ---------- data ---------- */
-const COLS=['orders','products','fabrics','suppliers','expenses','stock'];
-const S={orders:[],products:[],fabrics:[],suppliers:[],expenses:[],stock:[]};
+const COLS=['orders','products','fabrics','suppliers','expenses','stock','cash'];
+const S={orders:[],products:[],fabrics:[],suppliers:[],expenses:[],stock:[],cash:[]};
+/* Bank entries that aren't orders, expenses or fabric. 'balance' is a reading from the bank app. */
+const CASH_IN=['Owner deposit','Other money in'];
+const CASH_OUT=['Owner withdrawal','Bank charges','Refund to customer','Other money out'];
 const loaded=new Set();
 let sb=null, mode='loading', canWrite=true, dl=true, assets=true, started=false, chan=null;
 const photoUrl=id=>id||'';
@@ -364,7 +367,7 @@ const pieceLbl=s=>[s.size?'Size '+s.size:'',s.m&&s.m.length?'L '+s.m.length:'',s
 function stockOpts(code,selId){
   const ps=S.stock.filter(s=>s.code===code&&(s.id===selId||!stockUsedBy(s.id,curOrderId))).sort((a,b)=>(a.made||'').localeCompare(b.made||''));
   if(!code||!ps.length)return'';
-  return fld('From stock',`<select data-f="stock"><option value="">Make new (to order)</option>${ps.map(s=>`<option value="${esc(s.id)}" ${s.id===selId?'selected':''}>${esc(pieceLbl(s))}${s.made?' · made '+esc(fdate(s.made)):''}</option>`).join('')}</select>`);
+  return fld('From ready abayas',`<select data-f="stock"><option value="">Make new (to order)</option>${ps.map(s=>`<option value="${esc(s.id)}" ${s.id===selId?'selected':''}>${esc(pieceLbl(s))}${s.made?' · made '+esc(fdate(s.made)):''}</option>`).join('')}</select>`);
 }
 function nextNo(){return S.orders.reduce((m,o)=>Math.max(m,n(o.no)),0)+1}
 function inP(d,p){
@@ -397,7 +400,7 @@ const ICON={
   designs:'<svg viewBox="0 0 24 24"><path d="M9 3h6l1.5 3L20 21H4L7.5 6z"/><path d="M9 3c0 2 1.3 3 3 3s3-1 3-3"/></svg>',
   fabric:'<svg viewBox="0 0 24 24"><ellipse cx="7" cy="12" rx="3" ry="7"/><path d="M7 5h11a3 7 0 0 1 0 14H7"/><path d="M18 19v2"/></svg>',
   money:'<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9.5v5M18 9.5v5"/></svg>'};
-const TABS=[['home','Home'],['orders','Orders'],['stock','Stock'],['designs','Designs'],['fabric','Fabric'],['money','Money']];
+const TABS=[['home','Home'],['orders','Orders'],['stock','Ready abayas'],['designs','Designs'],['fabric','Fabric'],['money','Money']];
 let pending=false;
 function schedule(){if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;render()})}
 function render(){
@@ -420,7 +423,7 @@ function render(){
   if(!ready&&mode!=='local')h='<div class="empty">Loading your records…</div>';
   else h=(!canWrite?'<div class="ro">You have view-only access. Ask the owner to make you an Editor to add or change records.</div>':'')+VIEWS[ui.tab]();
   $('#main').innerHTML=h;
-  const fab=$('#fab'),F={orders:ui.sub.orders==='list'?['new-order','New order']:null,designs:['new-design','New design'],stock:['new-stock','Add abaya'],fabric:ui.sub.fabric==='fabric'?['new-fabric','Add fabric']:['new-supplier','Add supplier'],money:ui.sub.money==='exp'?['new-expense','Add expense']:null,home:['new-order','New order']}[ui.tab];
+  const fab=$('#fab'),F={orders:ui.sub.orders==='list'?['new-order','New order']:null,designs:['new-design','New design'],stock:['new-stock','Add abaya'],fabric:ui.sub.fabric==='fabric'?['new-fabric','Add fabric']:['new-supplier','Add supplier'],money:ui.sub.money==='exp'?['new-expense','Add expense']:ui.sub.money==='cash'?['new-balance','Record bank balance']:null,home:['new-order','New order']}[ui.tab];
   if(F&&canWrite&&ready){fab.hidden=false;fab.dataset.act=F[0];fab.innerHTML=`<span>+</span>${F[1]}`}else fab.hidden=true;
   if(keep){const q=$('#q');if(q){q.focus();try{q.setSelectionRange(keep[0],keep[1])}catch(e){}}}
 }
@@ -441,18 +444,88 @@ function orderRow(o){
     <span class="end">${omr(c.total)}<br>${stat}${o.status!=='Cancelled'?` <span class="pill p-${p}">${payLbl[p]}</span>`:''}</span>${nextBtn}
   </div>`;
 }
+/* ---------- cash book ----------
+   Expected balance = the last bank reading + every dated movement after it.
+   A new reading is compared with that; the gap is money nobody has recorded. */
+function movements(){
+  const m=[];
+  S.orders.forEach(o=>payLog(o).forEach(p=>{if(n(p.amt))m.push({date:p.date,amt:n(p.amt),cat:'Customer payments',t:`Order #${o.no}${o.name?' · '+o.name:''}`,act:'edit-order',id:o.id})}));
+  S.expenses.forEach(e=>{if(n(e.amount))m.push({date:e.date,amt:-n(e.amount),cat:e.cat||'Expense',t:e.note||e.cat||'Expense',act:'edit-expense',id:e.id})});
+  S.fabrics.forEach(f=>{const c=fcost(f);if(c)m.push({date:f.date,amt:-c,cat:'Fabric',t:[f.mat,f.color].filter(Boolean).join(' · ')||'Fabric',act:'edit-fabric',id:f.id})});
+  S.cash.filter(c=>c.kind==='in'||c.kind==='out').forEach(c=>m.push({date:c.date,amt:(c.kind==='out'?-1:1)*n(c.amount),cat:c.cat||(c.kind==='out'?'Other money out':'Other money in'),t:c.note||c.cat||'',act:'edit-cash',id:c.id}));
+  return m.filter(x=>x.date&&x.amt).sort((a,b)=>a.date.localeCompare(b.date));
+}
+function bankChecks(){
+  const m=movements();
+  const cs=S.cash.filter(c=>c.kind==='balance'&&c.date).sort((a,b)=>a.date.localeCompare(b.date)||n(a.updatedAt)-n(b.updatedAt));
+  return cs.map((c,k)=>{
+    if(!k)return {c,expected:null,diff:null};
+    const prev=cs[k-1],exp=n(prev.amount)+sum(m.filter(x=>x.date>prev.date&&x.date<=c.date),x=>x.amt);
+    return {c,expected:exp,diff:n(c.amount)-exp};
+  });
+}
+function cashView(){
+  const line=(l,v,cls='')=>`<div class="row ${cls}"><span class="main t">${l}</span><span class="amt ${v<-0.0005?'neg':''}">${money(v)}</span></div>`;
+  const btns=`<div class="acts"><button data-act="new-cash" data-v="in">+ Money in</button><button data-act="new-cash" data-v="out">− Money out</button></div>
+  <p class="hint">Customer payments, expenses and fabric are counted automatically. Use Money in / out only for anything else that touches the bank — owner deposits or withdrawals, bank charges, refunds.</p>`;
+  const checks=bankChecks();
+  if(!checks.length)return `<div class="group"><div class="empty"><b>Start with today’s bank balance</b>Tap “Record bank balance” and enter what your bank app shows. From then on Sadal works out what should be in the account, and when you check again it shows any difference.</div></div>`+btns;
+  const last=checks[checks.length-1].c;
+  const since=movements().filter(x=>x.date>last.date);
+  const expNow=n(last.amount)+sum(since,x=>x.amt);
+  const byCat=(arr)=>{const o={};arr.forEach(x=>o[x.cat]=(o[x.cat]||0)+x.amt);return Object.entries(o).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]))};
+  const ins=byCat(since.filter(x=>x.amt>0)),outs=byCat(since.filter(x=>x.amt<0));
+  const pill=r=>r.diff==null?'<span class="pill p-Delivered">Starting point</span>':Math.abs(r.diff)<0.0005?'<span class="pill p-Paid">Matches</span>':`<span class="pill p-Unpaid">${r.diff>0?'+':'−'}${money(Math.abs(r.diff))} ${r.diff>0?'not recorded in':'not accounted for'}</span>`;
+  return `<div class="tiles">
+    <div class="tile"><div class="l">Should be in the bank now</div><div class="v ${expNow<0?'neg':''}">${money(expNow)}<small>OMR</small></div></div>
+    <div class="tile"><div class="l">Last bank check · ${esc(fdate(last.date))}</div><div class="v">${money(n(last.amount))}<small>OMR</small></div></div>
+  </div>
+  <h2>Since ${esc(fdate(last.date))}</h2>
+  <div class="group st">
+    ${ins.map(([k,v])=>line(esc(k),v,'sub')).join('')}${line('Money in',sum(since.filter(x=>x.amt>0),x=>x.amt))}
+    ${outs.map(([k,v])=>line(esc(k),v,'sub')).join('')}${line('Money out',sum(since.filter(x=>x.amt<0),x=>x.amt))}
+    ${line('Net change',sum(since,x=>x.amt),'tot')}
+    ${line('Should be in the bank now',expNow,'tot')}
+  </div>
+  ${btns}
+  <h2>Bank checks</h2>
+  <p class="hint">Each check compares the bank with the last one plus everything recorded in between. A difference means money moved that isn’t recorded here.</p>
+  <div class="group">${[...checks].reverse().map(r=>`<button class="row" data-act="edit-cash" data-id="${esc(r.c.id)}"><span class="main"><span class="t">${esc(fdate(r.c.date))}</span>
+    <span class="s">${r.expected==null?'First reading':'Expected '+money(r.expected)}${r.c.note?' · '+esc(r.c.note):''}</span></span>
+    <span class="end">${omr(n(r.c.amount))}<br>${pill(r)}</span></button>`).join('')}</div>
+  <h2>Movements since last check</h2>
+  <div class="group">${since.length?[...since].reverse().map(x=>`<button class="row" data-act="${x.act}" data-id="${esc(x.id)}"><span class="main"><span class="t">${esc(x.t)}</span>
+    <span class="s">${esc(fdate(x.date))} · ${esc(x.cat)}</span></span><span class="end"><span class="${x.amt<0?'neg':'pos'}">${x.amt<0?'−':'+'}${money(Math.abs(x.amt))}</span></span></button>`).join(''):'<div class="empty"><b>Nothing since the last check</b>New payments, expenses and fabric purchases will appear here.</div>'}</div>`;
+}
+function openCash(c,kind){
+  const isNew=!c; c=c?clean(c):{date:today(),kind};
+  kind=c.kind;
+  const bal=kind==='balance',cats=kind==='in'?CASH_IN:CASH_OUT;
+  const body=`${bal?'<p class="note">Enter the balance your bank app shows for the business account at the end of this day.</p>':''}
+  ${bal?'':fld(R('Type'),sel('cat',c.cat||cats[0],cats))}
+  <div class="grid2">${fld(R(bal?'Bank balance':'Amount'),inp('amount',c.amount,'number'))}${fld(A('Date'),inp('date',c.date,'date'),'af')}</div>
+  ${fld('Note',inp('note',c.note,'text'))}`;
+  openSheet(bal?(isNew?'Record bank balance':'Bank balance'):(kind==='in'?'Money in':'Money out'),body,{
+    async onSave(){
+      if(V('amount')===''||(!bal&&!n(V('amount')))){flag(['amount']);return}
+      const r={...c,kind,amount:n(V('amount')),date:V('date')||today(),note:V('note')};if(!bal)r.cat=V('cat');
+      if(await save('cash',r)){closeSheet();toast(bal?'Bank balance saved':'Saved')}},
+    onDelete:isNew?null:async()=>{if(await remove('cash',c.id)){closeSheet();toast('Deleted')}}
+  });
+}
+
 function stockView(){
-  if(!S.products.length)return `<div class="group"><div class="empty"><b>No designs yet</b>Add a design first, then record the finished abayas you keep in stock.</div></div>`;
+  if(!S.products.length)return `<div class="group"><div class="empty"><b>No designs yet</b>Add a design first, then record the ready abayas you keep for immediate delivery.</div></div>`;
   const all=S.stock.map(s=>({s,o:stockUsedBy(s.id)}));
   const here=all.filter(x=>!x.o);
   const list=(ui.sf==='stock'?here:all).sort((a,b)=>(a.s.code||'').localeCompare(b.s.code||'',undefined,{numeric:true})||(a.s.made||'').localeCompare(b.s.made||''));
-  return `<div class="chips"><button class="chip ${ui.sf==='stock'?'on':''}" data-act="sf" data-v="stock">In stock<span class="c">${here.length}</span></button><button class="chip ${ui.sf==='all'?'on':''}" data-act="sf" data-v="all">All, incl. sold<span class="c">${all.length}</span></button></div>
+  return `<div class="chips"><button class="chip ${ui.sf==='stock'?'on':''}" data-act="sf" data-v="stock">Available<span class="c">${here.length}</span></button><button class="chip ${ui.sf==='all'?'on':''}" data-act="sf" data-v="all">All, incl. sold<span class="c">${all.length}</span></button></div>
   <p class="hint">${here.length} abaya${here.length===1?'':'s'} ready for immediate delivery, worth ${money(sum(here,x=>n(x.s.cost)))} OMR at cost. Tap “Sell” to start an order with that piece.</p>
   <div class="group">${list.length?list.map(({s,o})=>{const p=prod(s.code)||{};
     return `<div class="row orow" role="button" tabindex="0" data-act="edit-stock" data-id="${esc(s.id)}">${p.photo?`<img class="thumb" src="${photoUrl(p.photo)}" alt="">`:`<span class="code">${esc(s.code)}</span>`}
     <span class="main"><span class="t">${esc(s.code)} · ${esc(pieceLbl(s))}</span><span class="s">${[p.baseMat,p.baseColor].filter(Boolean).map(esc).join(' · ')}</span><span class="s">${s.made?'Made '+esc(fdate(s.made)):'No date'}${s.notes?' · '+esc(s.notes):''}</span>
     ${!o&&canWrite?`<span class="racts"><button type="button" class="next p-Ready" data-act="sell-stock" data-id="${esc(s.id)}">Sell ›</button></span>`:''}</span>
-    <span class="end">${omr(n(p.price))}<br>${o?`<span class="pill p-Delivered">Sold #${esc(o.no)}</span>`:'<span class="pill p-Ready">Available</span>'}</span></div>`}).join(''):`<div class="empty"><b>Nothing ready-made yet</b>Tap “Add abaya” when you finish abayas that aren’t for a specific order.</div>`}</div>`;
+    <span class="end">${omr(n(p.price))}<br>${o?`<span class="pill p-Delivered">Sold #${esc(o.no)}</span>`:'<span class="pill p-Ready">Available</span>'}</span></div>`}).join(''):`<div class="empty"><b>No ready abayas yet</b>Tap “Add abaya” when you finish abayas that aren’t for a specific order.</div>`}</div>`;
 }
 const VIEWS={
 home(){
@@ -501,7 +574,7 @@ designList(){
     return `<h2>${esc(c)}</h2><div class="group">${ps.map(p=>{const cost=pcost(p),pr=n(p.price),mg=pr?((pr-cost)/pr*100):0,av=avail(p);
       return `<button class="row" data-act="edit-design" data-id="${esc(p.id)}">${p.photo?`<img class="thumb" src="${photoUrl(p.photo)}" alt="">`:`<span class="code">${esc(p.code)}</span>`}
       <span class="main"><span class="t">${esc(p.code)}</span><span class="s">${esc(p.baseMat||'')}${p.baseColor?' · '+esc(p.baseColor):''}</span>
-      <span class="s">Cost ${money(cost)} · ${av?`${av} in stock`:'None in stock'}</span></span>
+      <span class="s">Cost ${money(cost)} · ${av?`${av} ready`:'None ready'}</span></span>
       <span class="end">${omr(pr)}<br><small class="${pr-cost<0?'neg':'pos'}">+${money(pr-cost)} · ${Math.round(mg)}%</small></span></button>`}).join('')}</div>`;
   }).join('');
 },
@@ -527,7 +600,8 @@ fabric(){
     <span class="end"><span class="amt">${r3(fleft(f))} m</span><br><small style="color:var(--muted)">${money(fcpm(f))}/m</small></span></button>`}).join(''):'<div class="empty"><b>Nothing here</b>Add a fabric purchase to track meters and cost per meter.</div>'}</div>`;
 },
 money(){
-  const head=seg('money',[['summary','Summary'],['exp','Expenses']]);
+  const head=seg('money',[['summary','Summary'],['exp','Expenses'],['cash','Cash']]);
+  if(ui.sub.money==='cash')return head+cashView();
   const P=[['month','This month'],['last','Last month'],['year','This year'],['all','All time']];
   const chips=`<div class="chips">${P.map(([v,l])=>`<button class="chip ${ui.period===v?'on':''}" data-act="period" data-v="${v}">${l}</button>`).join('')}</div>`;
   const p=ui.period;
@@ -578,7 +652,7 @@ money(){
   <div class="group st">
     ${line('Customers owe you',owed)}
     ${line('Fabric in stock at cost',fStock)}
-    ${line('Finished abayas at cost',aStock)}
+    ${line('Ready abayas at cost',aStock)}
   </div>
   ${bestL.length?`<h2>Best sellers</h2><div class="group">${bestL.map(([c,q])=>`<div class="row"><span class="code">${esc(c)}</span><span class="main t">${esc((prod(c)||{}).baseMat||'')}</span><span class="amt">${q} sold</span></div>`).join('')}</div>`:''}
   ${dl?`<div class="acts" style="margin-top:18px"><button data-act="export">Download orders (CSV)</button><button data-act="backup">Download full backup</button></div><div class="acts"><button data-act="logout">Sign out</button></div>`:''}`;
@@ -640,8 +714,13 @@ function readOrder(base){
   r.gift=ps==='Free gift';
   if(ps==='Paid in full')r.paid=r3(oc(r).total);
   else if(ps==='Part paid')r.paid=r3(Math.max(0,Math.min(n(V('paidamt')),oc(r).total)));
+  // Keep a dated log of money received, so the cash book knows when it came in.
+  const was=r3(n(base.paid)),now=r3(n(r.paid));
+  if(now!==was){r.pays=[...payLog(base),{date:today(),amt:r3(now-was)}]}
   return r;
 }
+/* Payments on an order, dated. Orders saved before the log existed count on their order date. */
+function payLog(o){if(Array.isArray(o.pays))return o.pays;return n(o.paid)>0?[{date:o.date||today(),amt:r3(n(o.paid))}]:[]}
 function openOrder(o,prefill){
   const isNew=!o;
   o=o?clean(o):{no:nextNo(),date:today(),due:addDays(today(),10),delivery:2,status:'New',items:[{code:'',qty:1}],m:{},...(prefill||{})};
@@ -694,9 +773,9 @@ function openOrder(o,prefill){
       if(miss.length||!r.items.length){flag(miss);return}
       const sids=r.items.map(i=>i.stockId).filter(Boolean);
       const dup=sids.find((s,k)=>sids.indexOf(s)!==k);
-      if(dup){flag($$('#sf [data-f="stock"]').filter(e=>e.value===dup));toast('The same stock piece is chosen twice');return}
+      if(dup){flag($$('#sf [data-f="stock"]').filter(e=>e.value===dup));toast('The same ready abaya is chosen twice');return}
       const taken=sids.map(s=>stockUsedBy(s,o.id)).find(Boolean);
-      if(taken&&r.status!=='Cancelled'){toast(`A chosen stock piece is already sold on order #${taken.no}`);return}
+      if(taken&&r.status!=='Cancelled'){toast(`A chosen ready abaya is already sold on order #${taken.no}`);return}
       r.items=r.items.map(i=>({...i,cost:r3(itemCost(i,isNew))}));
       if(await save('orders',r)){closeSheet();toast(isNew?'Order added':'Order saved')}
     },
@@ -726,9 +805,11 @@ function openStock(pc){
   const used=!isNew&&stockUsedBy(pc.id);
   const ps=[...S.products].sort((a,b)=>(a.code||'').localeCompare(b.code||'',undefined,{numeric:true}));
   const m=pc.m||{};
-  const body=`${used?`<p class="note">Sold on order #${esc(used.no)}${used.name?' to '+esc(used.name):''}. Cancel or delete that order to put it back in stock.</p>`:''}
+  const body=`${used?`<p class="note">Sold on order #${esc(used.no)}${used.name?' to '+esc(used.name):''}. Cancel or delete that order to make it available again.</p>`:''}
   <fieldset><legend>Abaya</legend>
-    ${fld(R('Design'),sel('code',pc.code,ps.map(p=>[p.code,p.code+(p.baseMat?' · '+p.baseMat:'')+(p.baseColor?' · '+p.baseColor:'')]),'Choose…'))}
+    <div class="f"><span>${R('Design')}</span><div class="dpick">${ps.map(p=>`<button type="button" class="dtile ${p.code===pc.code?'on':''}" data-sact="pick" data-v="${esc(p.code)}" aria-pressed="${p.code===pc.code}">${p.photo?`<img src="${photoUrl(p.photo)}" alt="" loading="lazy">`:'<i></i>'}<b>${esc(p.code)}</b></button>`).join('')}${!ps.length?'<p class="note">Add designs first on the Designs tab.</p>':''}</div></div>
+    <input type="hidden" name="code" value="${esc(pc.code||'')}">
+    <p class="note" id="sdesc"></p>
     <div class="grid2">${isNew?fld('How many identical pieces',inp('qty',1,'number','inputmode="numeric" min="1"')):''}${fld('Date made',inp('made',pc.made,'date'))}</div>
   </fieldset>
   <fieldset><legend>Size</legend>
@@ -738,19 +819,21 @@ function openStock(pc){
   ${fld('Notes',`<textarea name="notes">${esc(pc.notes||'')}</textarea>`)}
   <div class="sum" id="ssum"></div>`;
   const costOf=code=>(!isNew&&code===pc.code&&pc.cost!=null&&pc.cost!=='')?n(pc.cost):r3(pcost(prod(code)));
-  openSheet(isNew?'Add to stock':'Stock piece · '+esc(pc.code||''),body,{
+  openSheet(isNew?'Add ready abaya':'Ready abaya · '+esc(pc.code||''),body,{
+    act(a,el){if(a==='pick'){$$('#sf .dtile').forEach(b=>{b.classList.toggle('on',b===el);b.setAttribute('aria-pressed',b===el)});$('#sf [name="code"]').value=el.dataset.v;$('#sf .dpick').classList.remove('miss');sheetCtx.recalc()}},
     recalc(){const p=prod(V('code')),q=Math.round(n(V('qty')));
-      $('#ssum').innerHTML=p?`<div><span>Cost per piece</span><span>${money(costOf(p.code))}</span></div><div><span>Selling price</span><span>${money(n(p.price))}</span></div>${isNew&&q>1?`<div class="big"><span>Stock added at cost</span><span>${money(costOf(p.code)*q)} OMR</span></div>`:''}`:''},
+      $('#sdesc').textContent=p?[p.code,p.baseMat,p.baseColor].filter(Boolean).join(' · '):'';
+      $('#ssum').innerHTML=p?`<div><span>Cost per piece</span><span>${money(costOf(p.code))}</span></div><div><span>Selling price</span><span>${money(n(p.price))}</span></div>${isNew&&q>1?`<div class="big"><span>Total at cost</span><span>${money(costOf(p.code)*q)} OMR</span></div>`:''}`:''},
     async onSave(){
-      const code=V('code');if(!code){flag(['code']);return}
+      const code=V('code');if(!code){flag([$('#sf .dpick')]);return}
       const r={...pc,code,made:V('made'),size:V('size'),m:{length:V('mlen'),chest:V('mchest'),sleeves:V('msleeve')},notes:V('notes'),cost:costOf(code)};
       if(isNew){
         const q=Math.min(50,Math.max(1,Math.round(n(V('qty'))||1)));
         for(let k=0;k<q;k++){if(!await save('stock',{...r}))return}
-        closeSheet();toast(q>1?q+' abayas added to stock':'Added to stock');
-      }else if(await save('stock',r)){closeSheet();toast('Stock piece saved')}
+        closeSheet();toast(q>1?q+' ready abayas added':'Ready abaya added');
+      }else if(await save('stock',r)){closeSheet();toast('Ready abaya saved')}
     },
-    onDelete:isNew||used?null:async()=>{if(await remove('stock',pc.id)){closeSheet();toast('Removed from stock')}}
+    onDelete:isNew||used?null:async()=>{if(await remove('stock',pc.id)){closeSheet();toast('Ready abaya removed')}}
   });
 }
 
@@ -792,7 +875,7 @@ function openDesign(p){
   </fieldset>
   <fieldset><legend>Price and stock</legend>
     ${fld(R('Selling price'),inp('price',p.price,'number'))}
-    ${!isNew?`<p class="note">${soldOf(p.code)} sold, ${avail(p)} in stock. Record finished pieces under Designs › In stock.</p>`:''}
+    ${!isNew?`<p class="note">${soldOf(p.code)} sold, ${avail(p)} ready. Record finished pieces on the Ready abayas tab.</p>`:''}
   </fieldset>
   ${fld('Notes',`<textarea name="notes">${esc(p.notes||'')}</textarea>`)}
   <div class="sum" id="psum"></div>`;
@@ -999,6 +1082,9 @@ document.addEventListener('click',e=>{
     case 'edit-supplier':openSupplier(find('suppliers'));break;
     case 'new-expense':openExpense();break;
     case 'edit-expense':openExpense(find('expenses'));break;
+    case 'new-balance':openCash(null,'balance');break;
+    case 'new-cash':openCash(null,v==='out'?'out':'in');break;
+    case 'edit-cash':openCash(find('cash'));break;
     case 'advance':{const o=find('orders');if(!o||!OPEN.includes(o.status))break;const prev=o.status,nx=STATUSES[STATUSES.indexOf(prev)+1];
       save('orders',{...o,status:nx}).then(ok=>{if(ok)toast(`#${o.no} moved to ${nx}`,()=>save('orders',{...o,status:prev}))});break;}
     case 'invoice':invoicePDF(find('orders'));break;
