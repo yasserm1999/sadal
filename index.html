@@ -196,6 +196,11 @@ label.btn{display:inline-flex;align-items:center;cursor:pointer}
 .dtile b{display:block;font-size:12px;padding:4px 0 2px;color:var(--muted)}
 .dtile.on{border-color:var(--brass);box-shadow:0 0 0 2px var(--brass-soft)}
 .dtile.on b{color:var(--brass)}
+.dtile small{display:block;font-size:11px;color:var(--muted);padding:0 2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mtabs{display:flex;background:var(--sunk);border-radius:10px;padding:3px;margin:0 70px 10px 0}
+.mtabs button{flex:1;border:0;background:transparent;padding:8px 6px;border-radius:8px;font-weight:600;font-size:13px;color:var(--muted)}
+.mtabs button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.item[data-mode="make"] .m-ready,.item[data-mode="ready"] .m-make,.item[data-mode="ready"] .qtyf{display:none}
 .note{font-size:13px;color:var(--muted);margin-top:8px}
 .req{color:var(--bad);font-weight:700;margin-left:3px}
 .auto{font-style:normal;font-size:11px;font-weight:700;color:var(--brass);background:var(--brass-soft);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:1px}
@@ -364,11 +369,9 @@ const stockUsedBy=(id,except)=>live().find(o=>o.id!==except&&(o.items||[]).some(
 const inStock=pc=>!stockUsedBy(pc.id);
 const avail=p=>S.stock.filter(s=>s.code===p.code&&inStock(s)).length;
 const pieceLbl=s=>[s.size?'Size '+s.size:'',s.m&&s.m.length?'L '+s.m.length:'',s.m&&s.m.chest?'C '+s.m.chest:'',s.m&&s.m.sleeves?'S '+s.m.sleeves:''].filter(Boolean).join(' · ')||'No size noted';
-function stockOpts(code,selId){
-  const ps=S.stock.filter(s=>s.code===code&&(s.id===selId||!stockUsedBy(s.id,curOrderId))).sort((a,b)=>(a.made||'').localeCompare(b.made||''));
-  if(!code||!ps.length)return'';
-  return fld('From ready abayas',`<select data-f="stock"><option value="">Make new (to order)</option>${ps.map(s=>`<option value="${esc(s.id)}" ${s.id===selId?'selected':''}>${esc(pieceLbl(s))}${s.made?' · made '+esc(fdate(s.made)):''}</option>`).join('')}</select>`);
-}
+/* Ready abayas this order may pick: available ones, plus any it already holds. */
+function readyList(selId){return S.stock.filter(s=>s.id===selId||!stockUsedBy(s.id,curOrderId)).sort((a,b)=>(a.code||'').localeCompare(b.code||'',undefined,{numeric:true})||(a.made||'').localeCompare(b.made||''))}
+const readyDesc=s=>{const p=prod(s.code)||{};return [s.code,p.baseMat,p.baseColor,pieceLbl(s)].filter(Boolean).join(' · ')};
 function nextNo(){return S.orders.reduce((m,o)=>Math.max(m,n(o.no)),0)+1}
 function inP(d,p){
   if(p==='all')return true; if(!d)return false;
@@ -695,11 +698,15 @@ const setV=(name,v)=>{const e=$(`#sf [name="${name}"]`);if(e)e.value=v};
 /* ----- order form ----- */
 function itemHTML(i){
   const ps=[...S.products].sort((a,b)=>(a.code||'').localeCompare(b.code||'',undefined,{numeric:true}));
-  return `<div class="item"><button type="button" class="rm" data-sact="rmitem">Remove</button>
-  <div class="f"><span>${R('Design')}</span><div class="dpick">${ps.map(p=>`<button type="button" class="dtile ${p.code===i.code?'on':''}" data-sact="pick" data-v="${esc(p.code)}" aria-pressed="${p.code===i.code}">${p.photo?`<img src="${photoUrl(p.photo)}" alt="" loading="lazy">`:'<i></i>'}<b>${esc(p.code)}</b></button>`).join('')}${!ps.length?'<p class="note">Add designs first on the Designs tab.</p>':''}</div></div>
-  <input type="hidden" data-f="code" value="${esc(i.code||'')}">
-  <div class="spick">${stockOpts(i.code,i.stockId)}</div>
-  <div class="grid3">${fld(A('Qty'),`<input data-f="qty" type="number" inputmode="numeric" min="1" value="${esc(i.qty??1)}">`,'af')}${fld(A('Price'),`<input data-f="price" type="number" inputmode="decimal" step="any" value="${esc(i.price??'')}">`,'af')}${fld('Discount %',`<input data-f="disc" type="number" inputmode="decimal" step="any" value="${esc(i.disc||'')}" placeholder="0">`)}</div>
+  const ready=readyList(i.stockId),mode=i.stockId?'ready':'make',sp=i.stockId&&S.stock.find(s=>s.id===i.stockId);
+  const tab=(v,l)=>`<button type="button" class="${mode===v?'on':''}" data-sact="imode" data-v="${v}">${l}</button>`;
+  return `<div class="item" data-mode="${mode}"><button type="button" class="rm" data-sact="rmitem">Remove</button>
+  ${ready.length?`<div class="mtabs">${tab('make','Made to order')}${tab('ready',`Ready abaya (${ready.length})`)}</div>`:''}
+  <div class="m-make"><div class="f"><span>${R('Design')}</span><div class="dpick">${ps.map(p=>`<button type="button" class="dtile ${p.code===i.code&&!i.stockId?'on':''}" data-sact="pick" data-v="${esc(p.code)}" aria-pressed="${p.code===i.code&&!i.stockId}">${p.photo?`<img src="${photoUrl(p.photo)}" alt="" loading="lazy">`:'<i></i>'}<b>${esc(p.code)}</b></button>`).join('')}${!ps.length?'<p class="note">Add designs first on the Designs tab.</p>':''}</div></div></div>
+  <div class="m-ready"><div class="f"><span>${R('Ready abaya')}</span><div class="dpick">${ready.map(s=>{const p=prod(s.code)||{};return `<button type="button" class="dtile ${s.id===i.stockId?'on':''}" data-sact="pickready" data-v="${esc(s.id)}" aria-pressed="${s.id===i.stockId}">${p.photo?`<img src="${photoUrl(p.photo)}" alt="" loading="lazy">`:'<i></i>'}<b>${esc(s.code)}</b><small>${esc(s.size?'Size '+s.size:(s.m&&s.m.length?'L '+s.m.length:'No size'))}</small></button>`}).join('')}</div></div>
+    <p class="note rdesc">${sp?esc(readyDesc(sp)):'Tap the abaya the customer is taking. Its size and measurements come with it.'}</p></div>
+  <input type="hidden" data-f="code" value="${esc(i.code||'')}"><input type="hidden" data-f="stock" value="${esc(i.stockId||'')}">
+  <div class="grid3">${fld(A('Qty'),`<input data-f="qty" type="number" inputmode="numeric" min="1" value="${esc(i.qty??1)}">`,'af qtyf')}${fld(A('Price'),`<input data-f="price" type="number" inputmode="decimal" step="any" value="${esc(i.price??'')}">`,'af')}${fld('Discount %',`<input data-f="disc" type="number" inputmode="decimal" step="any" value="${esc(i.disc||'')}" placeholder="0">`)}</div>
   <input type="hidden" data-f="cost" value="${esc(i.cost??'')}"></div>`;
 }
 function readItems(){return $$('#sf .item').map(el=>{const g=f=>{const e=$(`[data-f="${f}"]`,el);return e?e.value.trim():''};const sid=g('stock');
@@ -742,7 +749,7 @@ function openOrder(o,prefill){
     <div id="items">${(o.items&&o.items.length?o.items:[{code:'',qty:1}]).map(itemHTML).join('')}</div>
     <button type="button" class="addline" data-sact="additem">+ Add another abaya</button>
   </fieldset>
-  <fieldset><legend>Measurements</legend>
+  <fieldset id="measf"><legend>Measurements</legend>
     <div class="grid3">${fld('Length',inp('mlen',o.m&&o.m.length,'text','inputmode="decimal"'))}${fld('Chest width',inp('mchest',o.m&&o.m.chest,'text','inputmode="decimal"'))}${fld('Sleeve from neck',inp('msleeve',o.m&&o.m.sleeves,'text','inputmode="decimal"'))}</div>
     ${fld('Fitting notes',inp('mnotes',o.m&&o.m.notes))}
   </fieldset>
@@ -757,6 +764,7 @@ function openOrder(o,prefill){
   openSheet(isNew?'New order':`Order #${esc(o.no)}`,body,{
     kind:'order',
     recalc(){const pw=$('#partwrap');if(pw)pw.hidden=V('paystate')!=='Part paid';
+      {const its=$$('#sf .item'),mf=$('#measf');if(mf)mf.style.display=its.length&&its.every(e=>e.dataset.mode==='ready')?'none':''}
       const x=oc(readOrder(o));const c=sum(readItems(),i=>n(i.qty)*itemCost(i,isNew));
       if(x.gift){$('#osum').innerHTML=`<div><span>Abayas value</span><span>${money(x.gross-x.disc)}</span></div>
       <div class="big"><span>Free gift — total</span><span>0.000 OMR</span></div><div><span>Payment expected</span><span>None</span></div>
@@ -768,7 +776,7 @@ function openOrder(o,prefill){
     async onSave(){
       const r=readOrder(o);
       const miss=[];if(!r.phone)miss.push('phone');if(!r.name)miss.push('name');
-      $$('#sf .item').forEach(it=>{const c=$('[data-f="code"]',it),pr=$('[data-f="price"]',it);if(!c.value)miss.push($('.dpick',it));else if(!n(pr.value))miss.push(pr)});
+      $$('#sf .item').forEach(it=>{const c=$('[data-f="code"]',it),pr=$('[data-f="price"]',it);if(!c.value)miss.push($(it.dataset.mode==='ready'?'.m-ready .dpick':'.m-make .dpick',it));else if(!n(pr.value))miss.push(pr)});
       if(V('paystate')==='Part paid'&&!(n(V('paidamt'))>0))miss.push($('#sf [name="paidamt"]'));
       if(miss.length||!r.items.length){flag(miss);return}
       const sids=r.items.map(i=>i.stockId).filter(Boolean);
@@ -783,14 +791,22 @@ function openOrder(o,prefill){
     onChange(t){
       if(t.name==='due')dueTouched=true;
       if(t.name==='date'&&isNew&&!dueTouched&&t.value)setV('due',addDays(t.value,10));
-      if(t.dataset.f==='code'){const it=t.closest('.item'),p=prod(t.value),pr=$('[data-f="price"]',it);if(p&&(!pr.value||isNew))pr.value=p.price||'';$('[data-f="cost"]',it).value='';$('.spick',it).innerHTML=stockOpts(t.value,'');}
-      if(t.dataset.f==='stock'){const it=t.closest('.item'),pc=S.stock.find(s=>s.id===t.value),q=$('[data-f="qty"]',it);
-        if(pc){q.value=1;q.readOnly=true;$('[data-f="cost"]',it).value=pc.cost??'';if(pc.m){if(!V('mlen'))setV('mlen',pc.m.length||'');if(!V('mchest'))setV('mchest',pc.m.chest||'');if(!V('msleeve'))setV('msleeve',pc.m.sleeves||'')}}
-        else{q.readOnly=false;$('[data-f="cost"]',it).value=''}}
+      if(t.dataset.f==='code'){const it=t.closest('.item'),p=prod(t.value),pr=$('[data-f="price"]',it);if(p&&(!pr.value||isNew))pr.value=p.price||'';$('[data-f="cost"]',it).value='';}
       if(t.name==='phone'&&isNew){const c=cs.find(c=>digits(c.phone)&&digits(c.phone)===digits(t.value));if(c){if(!V('name'))setV('name',c.name);if(!V('address'))setV('address',c.address);if(c.m){if(!V('mlen'))setV('mlen',c.m.length||'');if(!V('mchest'))setV('mchest',c.m.chest||'');if(!V('msleeve'))setV('msleeve',c.m.sleeves||'')}toast('Returning customer — details filled')}}
     },
     act(a,el){
       if(a==='pick'){const it=el.closest('.item');$$('.dtile',it).forEach(b=>{b.classList.toggle('on',b===el);b.setAttribute('aria-pressed',b===el)});const h=$('[data-f="code"]',it);h.value=el.dataset.v;$('.dpick',it).classList.remove('miss');sheetCtx.onChange(h)}
+      if(a==='imode'){const it=el.closest('.item');if(it.dataset.mode===el.dataset.v)return;it.dataset.mode=el.dataset.v;$$('.mtabs button',it).forEach(b=>b.classList.toggle('on',b===el));
+        $('[data-f="code"]',it).value='';$('[data-f="stock"]',it).value='';$('[data-f="cost"]',it).value='';$$('.dtile',it).forEach(b=>{b.classList.remove('on');b.setAttribute('aria-pressed',false)});
+        if(el.dataset.v==='make')$('[data-f="qty"]',it).value=1;sheetCtx.recalc()}
+      if(a==='pickready'){const it=el.closest('.item'),pc=S.stock.find(s=>s.id===el.dataset.v);if(!pc)return;
+        const other=$$('#sf .item').find(x=>x!==it&&$('[data-f="stock"]',x).value===pc.id);if(other){toast('That abaya is already on this order');return}
+        $$('.m-ready .dtile',it).forEach(b=>{b.classList.toggle('on',b===el);b.setAttribute('aria-pressed',b===el)});$('.m-ready .dpick',it).classList.remove('miss');
+        const p=prod(pc.code)||{},pr=$('[data-f="price"]',it);
+        $('[data-f="stock"]',it).value=pc.id;$('[data-f="code"]',it).value=pc.code;$('[data-f="qty"]',it).value=1;$('[data-f="cost"]',it).value=pc.cost??'';
+        if(!pr.value||isNew)pr.value=p.price||'';
+        if(pc.m){if(pc.m.length)setV('mlen',pc.m.length);if(pc.m.chest)setV('mchest',pc.m.chest);if(pc.m.sleeves)setV('msleeve',pc.m.sleeves)}
+        $('.rdesc',it).textContent=readyDesc(pc);sheetCtx.recalc()}
       if(a==='additem'){$('#items').insertAdjacentHTML('beforeend',itemHTML({code:'',qty:1}))}
       if(a==='rmitem'){if($$('#sf .item').length>1)el.closest('.item').remove();else toast('An order needs at least one abaya')}
       if(a==='paidfull'){setV('paid',r3(oc(readOrder(o)).total))}
