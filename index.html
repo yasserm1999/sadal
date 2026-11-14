@@ -218,6 +218,10 @@ input.miss,select.miss{border-color:var(--bad)!important;box-shadow:0 0 0 3px va
 .row.frow:active{background:var(--sunk)}
 button.drw{flex:none;align-self:center;border:1px dashed var(--line);background:var(--surface);color:var(--muted);border-radius:999px;font:inherit;font-size:12px;font-weight:700;padding:5px 10px;white-space:nowrap;cursor:pointer}
 button.drw.set{border-style:solid;color:#fff}
+.dpks{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:4px}
+.dpk{border:2px solid var(--dc,var(--line));background:var(--surface);color:var(--dc,var(--muted));border-radius:12px;padding:8px 4px;font:inherit;font-weight:700;cursor:pointer;line-height:1.15}
+.dpk b{display:block;font-size:18px}.dpk small{display:block;font-size:11px;font-weight:600}
+.dpk.on{background:var(--dc,var(--ink));border-color:var(--dc,var(--ink));color:#fff;box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--dc,var(--ink))}
 button.drw .sw{display:inline-block;width:8px;height:8px;border-radius:50%;background:#fff;margin-right:5px;vertical-align:1px;opacity:.85}
 .row.orow:active{background:var(--sunk)}
 button.next{margin-top:7px;border:1.5px solid currentColor;background:transparent!important;border-radius:999px;font:inherit;font-size:13px;font-weight:700;padding:5px 12px;cursor:pointer;white-space:nowrap}
@@ -286,6 +290,13 @@ const SIZES=['50','52','54','56','58','60'];
 /* The workshop's drawers are colour-coded: 1 green, 2 red, 3 blue, 4 orange, 5–8 brown. */
 const DRAWERS=['1','2','3','4','5','6','7','8'];
 const DRAWER_COL={1:['Green','#2e7d4f'],2:['Red','#b3261e'],3:['Blue','#1f5fa8'],4:['Orange','#d9731a'],5:['Brown','#7a4b2a'],6:['Brown','#7a4b2a'],7:['Brown','#7a4b2a'],8:['Brown','#7a4b2a']};
+/* Coloured buttons for choosing a drawer; phones can't colour a dropdown list. */
+function drawerPick(v){
+  v=v?String(v):'';
+  const b=(d,lbl,col)=>`<button type="button" class="dpk ${v===d?'on':''}" data-sact="pickdrawer" data-v="${d}" aria-pressed="${v===d}" ${col?`style="--dc:${col}"`:''}>${lbl}</button>`;
+  return `<div class="dpks">${b('','None','')}${DRAWERS.map(d=>b(d,`<b>${d}</b><small>${DRAWER_COL[d][0]}</small>`,DRAWER_COL[d][1])).join('')}</div><input type="hidden" name="drawer" value="${esc(v)}">`;
+}
+function pickDrawer(el){$$('#sf .dpk').forEach(x=>{x.classList.toggle('on',x===el);x.setAttribute('aria-pressed',x===el)});$('#sf [name="drawer"]').value=el.dataset.v}
 const drawerOpts=v=>[...DRAWERS.map(d=>[d,d+' · '+DRAWER_COL[d][0]]),...(v&&!DRAWERS.includes(String(v))?[[String(v),String(v)]]:[])];
 const CASH_IN=['Owner deposit','Other money in'];
 const CASH_OUT=['Owner withdrawal','Bank charges','Refund to customer','Other money out'];
@@ -829,8 +840,9 @@ function openDrawer(f){
   if(!f)return;
   if(!canWrite){toast(f.drawer?'In drawer '+f.drawer:'No drawer recorded');return}
   openSheet('Drawer · '+esc(f.mat||'Fabric')+(f.color?' · '+esc(f.color):''),
-    fld('Drawer',sel('drawer',f.drawer,drawerOpts(f.drawer),'None'))+'<p class="note">Where this fabric is kept, so it can be found quickly.</p>',{
+    `<div class="f"><span>Drawer</span>${drawerPick(f.drawer)}</div>`+'<p class="note">Where this fabric is kept, so it can be found quickly.</p>',{
     saveLabel:'Save drawer',
+    act(a,el){if(a==='pickdrawer')pickDrawer(el)},
     async onSave(){if(await save('fabrics',{...f,drawer:V('drawer')})){closeSheet();toast(V('drawer')?'Drawer saved':'Drawer cleared')}}
   });
 }
@@ -951,7 +963,8 @@ function openFabric(f){
     ${fld(A('VAT'),sel('vat',f.vat,[['inc','Included in price'],['exc','Not included (+5%)'],['none','No VAT']]),'af')}
   </fieldset>
   <fieldset><legend>Stock</legend>
-    <div class="grid2">${fld('Meters used so far',inp('used',f.used||'','number'))}${fld('Drawer',sel('drawer',f.drawer,drawerOpts(f.drawer),'None'))}</div>
+    ${fld('Meters used so far',inp('used',f.used||'','number'))}
+    <div class="f"><span>Drawer</span>${drawerPick(f.drawer)}</div>
     <div class="grid2">${fld('Use more meters',`<input data-x="use" type="number" inputmode="decimal" step="any" placeholder="e.g. 3">`)}<label class="f"><span>&nbsp;</span><button type="button" class="btn" style="width:100%" data-sact="usem">Take from stock</button></label></div>
   </fieldset>
   ${fld('Notes',`<textarea name="notes">${esc(f.notes||'')}</textarea>`)}
@@ -963,7 +976,7 @@ function openFabric(f){
       if(r.supplier&&!S.suppliers.some(s=>s.name.toLowerCase()===r.supplier.toLowerCase()))await save('suppliers',{name:r.supplier});
       if(await save('fabrics',r)){closeSheet();toast(isNew?'Fabric added':'Fabric saved')}},
     onDelete:isNew?null:async()=>{if(await remove('fabrics',f.id)){closeSheet();toast('Fabric deleted')}},
-    act(a){if(a==='usem'){const e=$('#sf [data-x="use"]'),m=n(e.value);if(!m){toast('Enter meters to take');return}setV('used',r3(n(V('used'))+m));e.value='';sheetCtx.recalc();toast(`${m} m taken — tap Save`)}}
+    act(a,el){if(a==='pickdrawer'){pickDrawer(el);return}if(a==='usem'){const e=$('#sf [data-x="use"]'),m=n(e.value);if(!m){toast('Enter meters to take');return}setV('used',r3(n(V('used'))+m));e.value='';sheetCtx.recalc();toast(`${m} m taken — tap Save`)}}
   });
 }
 
